@@ -1,0 +1,5 @@
+name: multi_agent_graph_safety
+version: "1.0.0"
+seed: 42
+max_model_calls_per_decision: 12
+max_steps: 32

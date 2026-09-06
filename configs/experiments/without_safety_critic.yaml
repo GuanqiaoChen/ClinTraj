@@ -1,0 +1,6 @@
+name: without_safety_critic
+version: "1.0.0"
+seed: 42
+max_model_calls_per_decision: 12
+max_steps: 32
+safety_critic: false

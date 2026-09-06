@@ -1,0 +1,6 @@
+name: without_information_gain
+version: "1.0.0"
+seed: 42
+max_model_calls_per_decision: 12
+max_steps: 32
+information_gain: false

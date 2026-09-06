@@ -1,0 +1,14 @@
+name: single_llm_same_tools
+version: "1.0.0"
+seed: 42
+max_model_calls_per_decision: 12
+max_steps: 32
+multi_agent: false
+structured_state: false
+dynamic_graph: false
+specialist_routing: false
+information_gain: false
+safety_critic: false
+retrieval: true
+explicit_ownership: false
+graph_semantics: false
