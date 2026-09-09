@@ -36,16 +36,18 @@ The Python framework and its verification commands remain separate; see the [rep
 
 ## Explore the replay
 
-- Choose one of five case cards. Switching cases resets the replay, component statuses, details, and activity.
+- Choose one of five compact case tabs. Switching cases resets the replay, component statuses, and open details.
 - **Play / Pause** advances or freezes individual trace events. **Next / Previous** moves between finalized decision boundaries. **Restart** returns to the ready state; **Replay** starts again after completion.
-- Click a decision on the timeline or clinical graph to pause and seek to that decision's first event. Both graphs and the detail panel then show that point in the same replay.
+- Click a decision on the timeline or clinical graph to pause and seek to that decision's first event. Both graphs show that point in the same replay. Clicking a clinical node also opens its step inspector.
 - Change replay speed using the speed selector. Clinical and agent activity always use the same event cursor.
 - Drag either graph to pan and use its zoom or fit controls. **Overview** fits the clinical trajectory; **Follow step** resumes automatic focus on the current decision.
-- Select an architecture component to inspect its responsibility. **Follow trace** returns its description to the active component.
+- Select an architecture component to show one sentence about its responsibility. Click it again, click the canvas, use the close button, or press `Escape` to dismiss the explanation.
 
-Outside focused controls, `Space` toggles playback, `Left` / `Right` moves between decisions, and `R` restarts. Standard keyboard controls remain available for buttons, selectors, and graph components. Motion respects the operating system's reduced-motion preference. The layout stacks the trajectory and step inspector on narrow screens.
+The replay strip sits above the full-width clinical graph and reports the current decision and component. A second full-width graph presents the multi-agent method. The step inspector appears on demand and keeps only the action, evidence, rationale, and responsible owner. Long introductions, case descriptions, badges, the permanent activity feed, architecture legends, and default architecture explanations are omitted so the two animated graphs remain the focus.
 
-Future clinical nodes are deliberately visible as a muted fixture preview. Selecting one seeks the replay; it does not release evidence in the Python runtime. The activity list shows the six most recent structured summaries, with elapsed demo time rather than patient timestamps. Evidence, rationales, component contributions, and safety attention are authored summaries; raw model chain-of-thought is never displayed.
+Outside focused controls, `Space` toggles playback, `Left` / `Right` moves between decisions, and `R` restarts. `Escape` dismisses the step inspector. Standard keyboard controls remain available for buttons, selectors, and graph components. Motion respects the operating system's reduced-motion preference, and graph navigation remains available on narrow screens.
+
+Future clinical nodes are deliberately visible as a muted fixture preview. Selecting one seeks the replay; it does not release evidence in the Python runtime. Evidence, rationales, component contributions, and safety attention are authored summaries; raw model chain-of-thought is never displayed.
 
 ## Fixture provenance and five structures
 
@@ -63,7 +65,11 @@ The supplied demo brief provides the five scenario IDs and conceptual patterns. 
 
 ## Alignment with the implemented framework
 
-Current Python code and [architecture](architecture.md) take precedence over the demo brief. The architecture view therefore includes candidate action generation, an independent diagnostic-strategy assessment, explicit specialist routing, local retrieval, evidence/domain validation, safety-filtered policy ranking, and a separate arbiter explanation. It also distinguishes model roles, deterministic infrastructure, and the physician boundary.
+Current Python code and [architecture](architecture.md) take precedence over the demo brief. The architecture view uses 13 presentation nodes while preserving all 17 runtime component status IDs. Infrastructure is grouped at the evidence gate, specialist routing/advice, retrieval/grounding, and execution/graph-transition boundaries. Every active or warning member remains visible through its group's highlight.
+
+All eight model roles remain individually identifiable: state interpreter, problem formulation, action generation, diagnostic strategy, specialist advice, evidence grounding, safety critic, and arbiter explanation. Three faint zones—**Understand**, **Assess**, and **Review & act**—organize the dependency diagram. Specialist and grounding branches describe information dependencies; their placement does not claim parallel execution or depict sequential invocation topology. Safety-filtered deterministic ranking precedes the explanatory arbiter, physician review, and approved execution.
+
+The compact rounded nodes, restrained edges, and strong active-node outline take visual inspiration from the agent diagram shown in the [Google ADK repository README](https://github.com/google/adk-python#readme). This is a visual reference only; the graph preserves current ClinTraj roles and semantics and adds no ADK runtime dependency.
 
 Problem formulation is an agent role that describes stable problem IDs and a differential. `ClinicalProblemManager` applies clinical graph transitions after approved execution. Specialist advice does not itself transfer ownership. Safety vetoes precede ordinal ranking; the arbiter explains the selected action and cannot override a veto or substitute its own candidate. The displayed path summarizes the full method configuration; it is not the LangGraph execution topology, and it does not simulate every role ablation or failure route.
 
@@ -77,22 +83,23 @@ These fixtures demonstrate interface behavior and semantic patterns. They provid
 |---|---|
 | `app/demo/page.tsx`, `components/demo/DemoShell.tsx` | Page entry, case selection, and a single shared replay state. |
 | `components/demo/trajectory/` | Custom clinical nodes and edges, graph navigation, and the step inspector. |
-| `components/demo/architecture/` | Interactive component graph and status projection for the current decision. |
-| `components/demo/activity/`, `components/demo/ReplayControls.tsx` | Recent event summaries, transport controls, and the decision timeline. |
+| `components/demo/architecture/` | Grouped method dependency graph, active-node emphasis, and on-demand role explanations. |
+| `components/demo/ReplayControls.tsx` | Compact transport strip, decision timeline, and current decision/component state readout. |
 | `data/demo/` | Five typed synthetic scenarios and deterministic trace events. |
 | `lib/demo/types.ts`, `lib/demo/architecture.ts` | Strict ontologies, fixture/event contracts, and actual method components. |
+| `lib/demo/architecture-view.ts` | Thirteen presentation nodes, dependency edges, and aggregation of all 17 component statuses. |
 | `lib/demo/replay-state.ts`, `lib/demo/use-replay.ts` | Pure event-prefix projection and timed playback/navigation. |
 | `lib/demo/config.ts` | Shared replay timing, animation timing, and supported speeds. |
 | `lib/demo/trace-event-source.ts`, `lib/demo/mock-trace-event-source.ts` | Source interface and its local fixture implementation. |
 
 `DemoCase` contains metadata, clinical nodes, explicit edges, and ordered `TraceEvent` records. Nodes retain action/relation enums, stable problem identities, ownership, lifecycle status, evidence references, and ordinal position, in addition to display text and graph coordinates. Explicit edge arrays support branches and multiple-parent returns without overloading a single parent field.
 
-A trace event has a stable ID, case and step IDs, sequence, elapsed demo timestamp, type, optional component ID, and concise summary. Started/completed events, safety warnings, simulated physician decisions, and node finalization supply the replay phases. `deriveReplayState` reconstructs the current decision, component statuses, finalized decisions, and activity from the same event prefix. Seeking and reverse navigation rebuild that projection instead of leaving stale component state behind. Agent statuses reset for each new decision, and only the selected specialists are shown as routed.
+A trace event has a stable ID, case and step IDs, sequence, elapsed demo timestamp, type, optional component ID, and concise summary. Started/completed events, safety warnings, simulated physician decisions, and node finalization supply the replay phases. `deriveReplayState` reconstructs the current decision, component statuses, finalized decisions, and event history from the same event prefix. The interface uses the current-state readout instead of a permanent activity list. Seeking and reverse navigation rebuild that projection instead of leaving stale component state behind. Agent statuses reset for each new decision, and only the selected specialists are shown as routed.
 
 `TraceEventSource` is the replacement boundary for future real traces; `MockTraceEventSource` supplies synchronous local case and event snapshots today. A future SSE adapter would need authenticated transport, ordered-event buffering, validation, cancellation, and a subscription bridge into the replay controller. The current interface is a starting contract, not an implemented streaming client. Such integration must preserve the observable-state boundary and mandatory runtime physician review rather than treating frontend playback as authorization.
 
 ## Present limits
 
-Implementation verification: `npm run lint`, `npm run type-check`, `npm run build`, and all 18 frontend tests passed. The existing Python suite passed all 94 tests. Browser checks covered five-case selection, play/pause, decision navigation, seeking, restart, speed selection, and desktop/mobile layout. Tests demonstrate software behavior rather than clinical validity.
+Implementation verification: `npm run lint`, `npm run type-check`, `npm run build`, and all 21 frontend tests passed. The added architecture checks cover complete runtime-component mapping, active/warning status preservation within groups, and the safety/ranking/physician boundaries. The 94 passing Python tests are previous framework validation; this frontend-only redesign changes no Python behavior and requires no new Python tests. Browser checks cover case selection, playback, decision navigation, seeking, restart, speed selection, on-demand inspection, and desktop/mobile layout. Tests demonstrate software behavior rather than clinical validity.
 
 The frontend uses fixed, hand-authored graph positions for these five scenarios. General trace layout, arbitrary runtime case loading, durable replay persistence, live approvals, model output rendering, and external trace transport are not implemented. The page makes source data and simulated activity boundaries visible and keeps future integration separate from current runtime guarantees.
