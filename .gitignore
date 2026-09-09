@@ -15,3 +15,9 @@ experiments/runs/
 *.jpg
 *.sqlite*
 Codex Prompt.txt
+# Local web demo build and dependency artifacts.
+node_modules/
+.next/
+*.tsbuildinfo
+web/out/
+web/coverage/

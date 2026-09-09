@@ -1,0 +1,103 @@
+import { buildCase, type StepInput } from './build-case';
+import type { DemoCase } from '../../lib/demo/types';
+
+// IDs are selectors explicitly supplied in Prompt 2. Every narrative below is newly
+// authored synthetic content. These are not exports or corrected versions of source cases.
+const initial = (problem: string): StepInput[] => [
+  { actionType: 'ASK_HISTORY', title: 'Clarify the presenting concern', evidence: [`A synthetic patient presents with ${problem}.`, 'The current history is incomplete.'], action: 'Ask focused questions about symptom course, relevant history, and current concerns.', rationale: 'Establish the current observation context before recommending further evaluation.' },
+  { actionType: 'EXAM', title: 'Perform a focused examination', evidence: ['The focused history is now available.', 'Examination findings have not yet been added.'], action: 'Request a clinician examination directed by the presenting concern.', rationale: 'Combine the history with current examination findings before deciding on further investigation.' },
+  { actionType: 'TEST', title: 'Obtain targeted initial studies', evidence: ['The clinician examination supports further evaluation.', 'The underlying cause remains uncertain.'], action: 'Recommend targeted diagnostic studies for physician review.', rationale: 'Reduce decision-relevant uncertainty using evidence available at this stage.' },
+];
+
+const linear = buildCase({
+  caseId: 'ZY080001040320', title: 'A focused breast care pathway', shortTitle: 'Breast care',
+  description: 'A sequential workup progresses from focused history to a procedure, pathology review, and follow-up.',
+  pattern: 'Linear progression', primaryProblem: 'Breast concern', owner: 'breast_surgery',
+  steps: [
+    ...initial('a breast concern'),
+    { actionType: 'PROCEDURE', title: 'Plan the indicated procedure', evidence: ['Initial studies identify a lesion requiring tissue evaluation.', 'The fixture records completed procedural review.'], action: 'Present a tissue-sampling procedure for physician review after prerequisites are checked.', rationale: 'Tissue evaluation can resolve uncertainty left by the initial studies.' },
+    { actionType: 'PATHOLOGY', title: 'Review the tissue findings', evidence: ['The synthetic procedure is complete.', 'A specimen report is now available.'], action: 'Review the available pathology with the treating clinical team.', rationale: 'Interpret newly available tissue findings in the context of the existing breast concern.' },
+    { actionType: 'REASSESS', title: 'Integrate the available results', evidence: ['The specimen findings have been reviewed.', 'Current recovery observations are available.'], action: 'Reassess the management plan using current findings and the patient’s priorities.', rationale: 'Update the current plan after the new result without assuming future outcomes.' },
+    { actionType: 'DISCHARGE_FOLLOWUP', title: 'Arrange longitudinal follow-up', evidence: ['The fixture records a reviewed follow-up plan.', 'No additional acute concern is introduced.'], action: 'Recommend a documented follow-up and review plan for the treating physician.', rationale: 'Keep ongoing surveillance and responsibility explicit beyond the current encounter.' },
+  ],
+});
+
+const advisory = buildCase({
+  caseId: 'ZY020001071253', title: 'GI workup with an ENT advisory branch', shortTitle: 'GI + ENT',
+  description: 'An additional ENT concern develops its own pathway while gastroenterology retains management ownership.',
+  pattern: 'Advisory branch', primaryProblem: 'Gastrointestinal concern', owner: 'gastroenterology',
+  steps: [
+    ...initial('a gastrointestinal concern'),
+    { actionType: 'REASSESS', title: 'Open a separate ENT concern', evidence: ['The current history includes a distinct ENT symptom.', 'The gastrointestinal concern remains active.'], action: 'Represent the ENT concern as a separate problem under the existing management episode.', rationale: 'A separate problem can receive focused advice while preserving the original team’s responsibility.', problemId: 'P2', problemLabel: 'ENT concern', parentProblemId: 'P1', relation: 'BRANCH', y: 210 },
+    { actionType: 'CONSULT', title: 'Request ENT specialty advice', evidence: ['The new ENT concern warrants focused specialist input.'], action: 'Request ENT advice while gastroenterology retains primary management.', rationale: 'Consultation provides an advisory assessment without an ownership change.', problemId: 'P2', relation: 'CONSULT', specialty: 'otolaryngology', y: 210 },
+    { actionType: 'PROCEDURE', title: 'Continue the GI investigation', evidence: ['The initial gastrointestinal studies support a procedural assessment.', 'The fixture records procedural prerequisites as reviewed.'], action: 'Present the gastrointestinal procedure for physician review.', rationale: 'The original problem can progress while the advisory pathway is addressed.', parents: [3], y: 0 },
+    { actionType: 'PATHOLOGY', title: 'Interpret the GI specimen', evidence: ['The gastrointestinal procedure is complete.', 'The synthetic specimen findings are now released.'], action: 'Review the specimen findings with the gastrointestinal team.', rationale: 'Use newly released pathology to inform the active gastrointestinal plan.', y: 0 },
+    { actionType: 'TREATMENT', title: 'Update the GI treatment plan', evidence: ['The gastrointestinal findings have been reviewed.'], action: 'Recommend a clinician-reviewed treatment plan consistent with the current findings.', rationale: 'Link the treatment proposal to available evidence and the current management problem.', y: 0 },
+    { actionType: 'REASSESS', title: 'Close the advisory assessment', evidence: ['ENT advice is available.', 'No further separate ENT work is specified in this fixture.'], action: 'Document completion of the ENT advisory stage.', rationale: 'The advisory concern can be explicitly resolved before integration.', problemId: 'P2', parents: [5], status: 'RESOLVED', y: 210 },
+    { actionType: 'REASSESS', title: 'Integrate both current pathways', evidence: ['The current GI plan and completed ENT advice are both available.'], action: 'Reassess the overall plan in a new integrated decision event.', rationale: 'Combine the latest branch and ancestor context through a forward integration; do not revisit a historical node.', relation: 'RETURN', parents: [9, 8], y: 105 },
+    { actionType: 'DISCHARGE_FOLLOWUP', title: 'Coordinate follow-up', evidence: ['The integrated plan identifies ongoing review needs.'], action: 'Document follow-up under the original gastrointestinal team.', rationale: 'An advisory consultation does not replace longitudinal management ownership.' },
+  ],
+});
+
+const ownership = buildCase({
+  caseId: 'ZY010001076087', title: 'Pulmonary care with a fracture pathway', shortTitle: 'Lung + fracture',
+  description: 'Orthopedic advice becomes an explicit ownership transfer for a distinct fracture problem, then rejoins current management.',
+  pattern: 'Consult → transfer → return', primaryProblem: 'Pulmonary concern', owner: 'pulmonology',
+  steps: [
+    ...initial('a pulmonary concern'),
+    { actionType: 'REASSESS', title: 'Recognize a distinct fracture problem', evidence: ['Current imaging identifies a separate vertebral concern.', 'The pulmonary concern remains unresolved.'], action: 'Create a separate fracture-management problem under the active episode.', rationale: 'Distinct management needs justify an explicit problem branch.', problemId: 'P2', problemLabel: 'Vertebral fracture concern', parentProblemId: 'P1', relation: 'BRANCH', y: 210 },
+    { actionType: 'CONSULT', title: 'Obtain orthopedic advice', evidence: ['The fracture concern requires specialist evaluation.'], action: 'Request orthopedic advice while the current team retains management.', rationale: 'Advisory input should be recorded separately from a change in primary responsibility.', problemId: 'P2', relation: 'CONSULT', specialty: 'orthopedics', y: 210 },
+    { actionType: 'TRANSFER', title: 'Transfer fracture management', evidence: ['Orthopedic assessment is available.', 'The fixture records agreement on specialist management.'], action: 'Transfer primary management of the fracture problem to orthopedics.', rationale: 'Ownership changes only through this explicit transfer; pulmonary care retains its current owner.', problemId: 'P2', relation: 'TRANSFER', owner: 'orthopedics', y: 210 },
+    { actionType: 'TREATMENT', title: 'Continue pulmonary treatment', evidence: ['Current pulmonary findings support continued management.'], action: 'Review and continue the pulmonary treatment plan.', rationale: 'The pulmonary problem remains independently active while orthopedic care proceeds.', parents: [3], y: 0 },
+    { actionType: 'PROCEDURE', title: 'Review the orthopedic procedure', evidence: ['The fixture records an orthopedic procedural assessment.', 'Required preparation has been reviewed.'], action: 'Present the proposed fracture procedure for physician review.', rationale: 'The current orthopedic owner evaluates the intervention using the available information.', problemId: 'P2', parents: [6], y: 210 },
+    { actionType: 'REASSESS', title: 'Reassess the fracture pathway', evidence: ['The synthetic procedure is complete.', 'Current recovery findings are available.'], action: 'Review recovery and continuing orthopedic needs.', rationale: 'Reassessment supplies current branch context for subsequent integration.', problemId: 'P2', y: 210 },
+    { actionType: 'REASSESS', title: 'Reintegrate current management', evidence: ['Pulmonary treatment progress and orthopedic reassessment are available.'], action: 'Create a new integrated reassessment under pulmonary management.', rationale: 'Integration joins two current contexts without reversing orthopedic ownership of the fracture problem.', relation: 'RETURN', parents: [9, 7] },
+    { actionType: 'DISCHARGE_FOLLOWUP', title: 'Coordinate both follow-up plans', evidence: ['Both teams have identified continued review needs.'], action: 'Coordinate follow-up with explicit responsibilities for both problems.', rationale: 'Keep ownership of each problem clear after integration.' },
+  ],
+});
+
+const dynamic = buildCase({
+  caseId: 'ZY030000642578', title: 'One presentation. Two evolving pathways.', shortTitle: 'Neurology + breast',
+  description: 'A neurological presentation reveals an incidental breast concern. Parallel problems receive distinct advice and ownership before forward reintegration.',
+  pattern: 'Dynamic multi-problem care', primaryProblem: 'Neurological presentation', owner: 'neurology',
+  steps: [
+    ...initial('dizziness and a neurological concern'),
+    { actionType: 'REASSESS', title: 'Open the incidental lesion pathway', evidence: ['Newly available imaging describes an incidental breast abnormality.', 'The neurological presentation remains under evaluation.'], action: 'Create a distinct breast problem beneath the current clinical episode.', rationale: 'The new concern needs its own pathway while the original presentation remains active.', problemId: 'P2', problemLabel: 'Incidental breast concern', parentProblemId: 'P1', relation: 'BRANCH', y: 210 },
+    { actionType: 'TEST', title: 'Characterize the breast finding', evidence: ['The incidental finding has not yet been fully characterized.'], action: 'Recommend focused breast evaluation for physician review.', rationale: 'Use targeted assessment to reduce uncertainty in the newly introduced problem.', problemId: 'P2', y: 210 },
+    { actionType: 'CONSULT', title: 'Request breast specialty advice', evidence: ['The focused evaluation is now available.'], action: 'Obtain breast-specialty advice while neurology retains current ownership of this problem.', rationale: 'Specialist advice precedes and remains distinct from a management transfer.', problemId: 'P2', relation: 'CONSULT', specialty: 'breast_surgery', y: 210 },
+    { actionType: 'TRANSFER', title: 'Transfer the breast problem', evidence: ['Specialty review identifies continuing breast-management needs.', 'The fixture records agreement on responsibility.'], action: 'Transfer primary ownership of the breast concern to the breast surgery team.', rationale: 'A separate explicit transfer records who now manages this problem.', problemId: 'P2', relation: 'TRANSFER', owner: 'breast_surgery', y: 210 },
+    { actionType: 'TEST', title: 'Continue neurological evaluation', evidence: ['The original neurological concern still requires assessment.'], action: 'Review the remaining targeted neurological studies.', rationale: 'A new incidental problem does not erase the original management pathway.', parents: [3], y: 0 },
+    { actionType: 'TREATMENT', title: 'Update the neurological plan', evidence: ['Current neurological assessment results are available.'], action: 'Present an updated neurological management plan for physician review.', rationale: 'Continue the original problem using its own current evidence and ownership.', y: 0 },
+    { actionType: 'PROCEDURE', title: 'Proceed with tissue evaluation', evidence: ['The breast team has reviewed the current lesion findings.', 'The fixture records procedural prerequisites as checked.'], action: 'Present the breast procedure for physician review.', rationale: 'The current specialty owner considers procedural evaluation using available findings.', problemId: 'P2', parents: [7], y: 210 },
+    { actionType: 'PATHOLOGY', title: 'Review the breast pathology', evidence: ['The synthetic procedure is complete.', 'The specimen report is newly available.'], action: 'Interpret the pathology in the breast-management context.', rationale: 'The report becomes usable only after the procedure stage releases it.', problemId: 'P2', y: 210 },
+    { actionType: 'REASSESS', title: 'Integrate the current care plan', evidence: ['The latest neurological plan and breast pathology review are available.'], action: 'Create a new reassessment that integrates both management pathways.', rationale: 'A forward two-parent event brings current branch progress into the ancestor plan while preserving specialty ownership.', relation: 'RETURN', parents: [11, 9] },
+    { actionType: 'DISCHARGE_FOLLOWUP', title: 'Coordinate longitudinal care', evidence: ['The integrated review identifies separate follow-up responsibilities.'], action: 'Document coordinated neurological and breast follow-up.', rationale: 'Maintain continuity across two stable problems without conflating their ownership.' },
+  ],
+});
+
+const acute = buildCase({
+  caseId: 'ZY010001090829', title: 'Acute escalation, then a forward return', shortTitle: 'Urology + critical care',
+  description: 'An acute infection concern interrupts urologic management. Critical-care ownership and later reintegration remain explicit.',
+  pattern: 'Suspend → escalate → resume', primaryProblem: 'Urologic concern', owner: 'urology',
+  steps: [
+    ...initial('a urologic concern'),
+    { actionType: 'TREATMENT', title: 'Begin the reviewed urologic plan', evidence: ['The initial urologic findings have been reviewed.'], action: 'Present the initial non-procedural management plan for physician review.', rationale: 'Begin management based on the information currently available.' },
+    { actionType: 'REASSESS', title: 'Recognize acute deterioration', evidence: ['New observations describe an acute infection concern with clinical deterioration.', 'The original urologic problem remains unresolved.'], action: 'Create a separate acute-care problem and request immediate physician reassessment.', rationale: 'New instability changes the current priorities and requires a distinct management pathway.', problemId: 'P2', problemLabel: 'Acute infection concern', parentProblemId: 'P1', relation: 'BRANCH', y: 210, safety: 'Acute deterioration is present in this synthetic scenario. Escalation requires immediate physician review.' },
+    { actionType: 'REASSESS', title: 'Suspend elective urologic work', evidence: ['The acute-care branch is active.', 'Further elective urologic work awaits stabilization.'], action: 'Record the original problem as suspended while acute management takes priority.', rationale: 'Suspension preserves the unresolved problem and its owner for a later current-state return.', parents: [4], status: 'SUSPENDED', y: 0 },
+    { actionType: 'TRANSFER', title: 'Escalate to critical care', evidence: ['Current deterioration requires a higher level of care in this fixture.', 'Critical-care transfer has been reviewed.'], action: 'Transfer primary ownership of the acute problem to critical care.', rationale: 'Explicitly record the higher-acuity owner while leaving the suspended urologic problem with urology.', problemId: 'P2', parents: [5], relation: 'TRANSFER', owner: 'critical_care', y: 210, safety: 'The acute branch remains unstable; the scripted next action is escalation, not elective intervention.' },
+    { actionType: 'TEST', title: 'Evaluate the acute-care state', evidence: ['The simulated transfer is complete.', 'Current critical-care observations are available.'], action: 'Review focused studies relevant to the acute concern.', rationale: 'The current clinical state guides the immediate critical-care assessment.', problemId: 'P2', y: 210 },
+    { actionType: 'TREATMENT', title: 'Review critical-care treatment', evidence: ['The acute assessment has been reviewed.'], action: 'Present the critical-care treatment plan for physician review.', rationale: 'Address the active acute problem under its explicit management owner.', problemId: 'P2', y: 210 },
+    { actionType: 'REASSESS', title: 'Reassess stabilization', evidence: ['The new fixture observations describe stabilization.', 'Readiness for the next care stage needs review.'], action: 'Reassess the acute problem and readiness for reintegration.', rationale: 'A current reassessment is required before resuming the previously suspended problem.', problemId: 'P2', y: 210 },
+    { actionType: 'REASSESS', title: 'Complete the acute-care stage', evidence: ['The scripted acute-care review records this episode as resolved.'], action: 'Document resolution of the acute problem in the synthetic episode.', rationale: 'An explicit lifecycle change avoids inferring resolution merely from a RETURN relation.', problemId: 'P2', status: 'RESOLVED', y: 210 },
+    { actionType: 'REASSESS', title: 'Resume current urologic management', evidence: ['The acute concern is resolved in the fixture.', 'The suspended urologic problem remains unresolved.'], action: 'Create a new urologic reassessment joining the acute and suspended contexts.', rationale: 'RETURN resumes the ancestor through a new event; it does not jump backward to the earlier urologic state.', relation: 'RETURN', parents: [11, 6] },
+    { actionType: 'TEST', title: 'Review procedural readiness', evidence: ['The new urologic reassessment is available.', 'Readiness for the proposed procedure remains to be checked.'], action: 'Recommend current pre-procedure evaluation for physician review.', rationale: 'Recheck prerequisites using the stabilized current state rather than the pre-deterioration context.' },
+    { actionType: 'PROCEDURE', title: 'Review the urologic procedure', evidence: ['The fixture records current preparation and procedural review as complete.'], action: 'Present the planned urologic procedure for physician review.', rationale: 'Proceed in the original problem only after current reassessment and prerequisite review.' },
+    { actionType: 'PATHOLOGY', title: 'Interpret the specimen report', evidence: ['The synthetic procedure is complete.', 'The specimen report is now available.'], action: 'Review the newly available pathology with the urology team.', rationale: 'Use evidence released by the completed procedure without making earlier decisions depend on it.' },
+    { actionType: 'TREATMENT', title: 'Update ongoing treatment', evidence: ['The specimen findings and current recovery observations have been reviewed.'], action: 'Present an updated urologic treatment plan for physician review.', rationale: 'Tie the subsequent plan to the current post-procedure evidence.' },
+    { actionType: 'DISCHARGE_FOLLOWUP', title: 'Plan continuing urologic care', evidence: ['The fixture records a reviewed continuing-care plan.'], action: 'Document follow-up responsibility and future reassessment needs.', rationale: 'Close the current episode with explicit ongoing ownership and follow-up.' },
+  ],
+});
+
+export const DEMO_CASES: DemoCase[] = [linear, advisory, ownership, dynamic, acute];
+export const defaultDemoCase = dynamic;
+export const DEFAULT_DEMO_CASE_ID = dynamic.caseId;

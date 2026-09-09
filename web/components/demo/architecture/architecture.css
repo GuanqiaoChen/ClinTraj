@@ -1,0 +1,149 @@
+.architecture-panel {
+  overflow: hidden;
+  border: 1px solid var(--border, #e7e9ef);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--ink, #202431);
+  box-shadow: 0 2px 5px rgb(29 36 59 / 2%);
+}
+
+.architecture-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 80px;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border, #e7e9ef);
+}
+
+.architecture-panel__heading,
+.architecture-panel__execution,
+.architecture-panel__legend,
+.architecture-panel__legend-types,
+.architecture-panel__legend-states,
+.architecture-panel__legend span,
+.architecture-node__meta,
+.architecture-node__kind,
+.architecture-node__status,
+.architecture-panel__detail,
+.architecture-panel__follow {
+  display: flex;
+  align-items: center;
+}
+
+.architecture-panel__heading { gap: 12px; }
+.architecture-panel__icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border: 1px solid #e9ebf3;
+  border-radius: 9px;
+  background: #f8f9fc;
+  color: #626b83;
+}
+.architecture-panel__heading h2 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.25px; }
+.architecture-panel__heading p { margin: 4px 0 0; font-size: 11px; color: var(--muted, #7b8090); }
+.architecture-panel__heading p > span[aria-hidden] { padding: 0 3px; }
+.architecture-panel__step,
+.architecture-panel__execution-count,
+.architecture-node__meta {
+  font-family: var(--font-geist-mono), "SFMono-Regular", Consolas, monospace;
+}
+.architecture-panel__execution { flex-shrink: 0; gap: 7px; color: var(--muted, #7b8090); font-size: 10px; }
+.architecture-panel__execution-dot { width: 5px; height: 5px; border-radius: 50%; background: #acb2c0; }
+.architecture-panel__execution-dot--playing { background: var(--accent, #4658c9); box-shadow: 0 0 0 3px #eef0fb; }
+.architecture-panel__execution-count { margin-left: 9px; padding-left: 14px; border-left: 1px solid var(--border, #e7e9ef); font-size: 10px; letter-spacing: 0.2px; }
+.architecture-panel__canvas { height: 386px; width: 100%; background: #fcfcfe; }
+.architecture-panel .react-flow__node { border-radius: 10px; }
+.architecture-node {
+  position: relative;
+  width: 185px;
+  height: 84px;
+  padding: 10px 12px 11px;
+  border: 1px solid #e1e5ed;
+  border-radius: 10px;
+  background: #fff;
+  color: #525a6c;
+  box-shadow: 0 2px 3px rgb(29 36 59 / 2%);
+  cursor: pointer;
+  transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+.architecture-node:hover { border-color: #bdc4d5; box-shadow: 0 3px 9px rgb(29 36 59 / 5%); }
+.architecture-node:focus-visible { outline: 2px solid var(--accent, #4658c9); outline-offset: 3px; }
+.architecture-node__meta { justify-content: space-between; font-size: 8px; line-height: 12px; letter-spacing: 0.12px; }
+.architecture-node__kind { gap: 5px; text-transform: uppercase; color: #8a91a1; }
+.architecture-node__status { gap: 3px; color: #9198a7; }
+.architecture-node__status-dot { width: 4px; height: 4px; border-radius: 50%; background: #b9c0ce; }
+.architecture-node__title { margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; font-weight: 550; letter-spacing: -0.17px; }
+.architecture-node__subtitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 3px; color: #9298a7; font-size: 9.5px; line-height: 13px; letter-spacing: -0.03px; }
+.architecture-node__subtitle--routed { color: #6774b1; }
+.architecture-node .react-flow__handle { width: 1px; height: 1px; min-width: 1px; min-height: 1px; border: none; opacity: 0; pointer-events: none; }
+.architecture-node--pending { background: #fefeff; }
+.architecture-node--pending .architecture-node__status-dot { border: 1px solid #adb5c6; background: transparent; width: 5px; height: 5px; }
+.architecture-node--active { background: #f7f8ff; border-color: #8a97dc; box-shadow: 0 0 0 3px rgb(70 88 201 / 5%), 0 2px 7px rgb(70 88 201 / 5%); }
+.architecture-node--active .architecture-node__title { color: #3647aa; }
+.architecture-node--active .architecture-node__status { color: #4658c9; }
+.architecture-node--active .architecture-node__status-dot { background: #4658c9; box-shadow: 0 0 0 2px #e4e8fb; }
+.architecture-node--active .architecture-node__subtitle { color: #7a83a3; }
+.architecture-node--completed { border-color: #dce0e9; }
+.architecture-node--completed .architecture-node__title { color: #343c50; }
+.architecture-node--completed .architecture-node__status { color: #6a769b; }
+.architecture-node--completed .architecture-node__subtitle { color: #818a9f; }
+.architecture-node--inspected { outline: 1px solid #a6aec8; outline-offset: 2px; }
+.architecture-node--warning { background: #fff8f7; border-color: #dfa4a1; }
+.architecture-node--warning .architecture-node__title,
+.architecture-node--warning .architecture-node__status { color: #b84c45; }
+.architecture-node--warning .architecture-node__status-dot { background: #c65b53; }
+.architecture-panel .react-flow__controls {
+  overflow: hidden;
+  display: flex;
+  margin: 12px;
+  border: 1px solid #e5e8ef;
+  border-radius: 7px;
+  box-shadow: 0 2px 4px rgb(29 36 59 / 3%);
+}
+.architecture-panel .react-flow__controls-button { width: 29px; height: 27px; padding: 8px; border: 0; border-right: 1px solid #e9ebf1; color: #778095; background: #fff; }
+.architecture-panel .react-flow__controls-button:last-child { border: 0; }
+.architecture-panel .react-flow__controls-button:hover { background: #f5f6fb; }
+.architecture-panel .react-flow__controls-button svg { fill: currentColor; }
+.architecture-panel__legend { justify-content: space-between; gap: 12px; padding: 12px 24px; border-top: 1px solid #eceef4; color: #8b91a0; font-size: 9px; }
+.architecture-panel__legend-types { gap: 20px; }
+.architecture-panel__legend-states { gap: 15px; }
+.architecture-panel__legend span { gap: 5px; white-space: nowrap; }
+.architecture-panel__legend svg { flex-shrink: 0; color: #8590a7; }
+.architecture-panel__detail { gap: 9px; min-height: 57px; padding: 13px 24px; border-top: 1px solid #eff0f5; background: #fcfcfe; }
+.architecture-panel__detail-icon { color: #8991a8; flex-shrink: 0; align-self: flex-start; margin-top: 1px; }
+.architecture-panel__detail p { margin: 0; font-size: 10px; line-height: 1.65; color: #838a9c; }
+.architecture-panel__detail strong { display: inline; margin-right: 7px; font-weight: 550; color: #616b80; }
+.architecture-panel__safeguard { margin-left: auto; color: #949cad; flex-shrink: 0; }
+.architecture-panel__follow { flex-shrink: 0; margin-left: auto; gap: 4px; border: 0; padding: 5px 0 5px 8px; color: #6574b8; background: transparent; font: inherit; font-size: 10px; cursor: pointer; }
+.architecture-panel__follow:hover { color: var(--accent, #4658c9); }
+.architecture-panel__follow:focus-visible { outline: 2px solid var(--accent, #4658c9); outline-offset: 3px; }
+
+@media (max-width: 850px) {
+  .architecture-panel__canvas { height: 335px; }
+  .architecture-panel__header { padding: 16px; }
+  .architecture-panel__legend { padding: 12px 16px; flex-wrap: wrap; }
+  .architecture-panel__detail { padding: 12px 16px; }
+  .architecture-panel__execution-count { display: none; }
+}
+
+@media (max-width: 560px) {
+  .architecture-panel__canvas { height: 315px; }
+  .architecture-panel__heading { gap: 9px; }
+  .architecture-panel__heading h2 { font-size: 14px; }
+  .architecture-panel__heading p { font-size: 9px; }
+  .architecture-panel__execution { display: none; }
+  .architecture-panel__legend-types { gap: 12px; }
+  .architecture-panel__detail { align-items: flex-start; }
+  .architecture-panel__detail strong { display: block; }
+  .architecture-panel__follow { font-size: 9px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .architecture-node { transition: none; }
+  .architecture-panel .react-flow__edge.animated path { animation: none; }
+}

@@ -11,3 +11,7 @@ __pycache__
 .mypy_cache
 .ruff_cache
 Codex Prompt.txt
+# Browser demo dependencies and build output are not Python image inputs.
+web/node_modules
+web/.next
+web/coverage

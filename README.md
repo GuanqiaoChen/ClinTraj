@@ -14,6 +14,7 @@ The repository is a technical and experimental foundation. Its bundled model is 
 - a LangGraph runtime adapter with local in-memory checkpoints;
 - source-workbook validation, five selected-case structural tests, leakage tests, and synthetic workflow tests;
 - config-driven synthetic baselines and ablations with aggregate run manifests.
+- a standalone interactive localhost demo with five synthetic scenarios, synchronized clinical and architecture graphs, and deterministic event replay.
 
 Clinician annotations are not required to build or exercise these technical components. They are required for clinical correctness, acceptable-alternative, and rationale-quality endpoints; the supplied workbook has no completed review rows. See [data inspection](docs/data_inspection.md) for the source findings and limitations.
 
@@ -102,6 +103,20 @@ python -m clintraj demo --decision reject --steps 1
 
 This demo uses synthetic evidence, a deterministic local fixture, and an offline executor. It does not call an external model or perform an EHR action.
 
+## Run the interactive browser demo
+
+The standalone Next.js frontend requires Node.js 20.9 or later and npm:
+
+```bash
+cd web
+npm ci
+npm run dev
+```
+
+Open [http://localhost:3000/demo](http://localhost:3000/demo). Select a case and use playback, decision navigation, and graph controls to explore synchronized clinical and component activity. The frontend uses authored synthetic fixtures with IDs supplied by the demo brief, rather than source-workbook patient narratives. Its physician events are simulated, and no Python runtime, LLM, database, or clinical backend is connected.
+
+Run `npm run lint`, `npm run type-check`, `npm run test`, and `npm run build` from `web/`. See [demo documentation](docs/demo.md) for controls, fixture provenance, the implemented architecture, and the future trace-source boundary.
+
 ## Run a synthetic experiment
 
 Run the full method wiring configuration:
@@ -153,6 +168,7 @@ docker run --rm \
 ## Repository guide
 
 - [Architecture](docs/architecture.md): method layers, data flow, agent contracts, safety boundary, runtime, and evaluation.
+- [Interactive demo](docs/demo.md): localhost setup, replay controls, five synthetic scenarios, and frontend integration boundaries.
 - [Clinical graph semantics](docs/clinical_graph_semantics.md): exact `CONTINUE`, `BRANCH`, `CONSULT`, `TRANSFER`, and `RETURN` invariants.
 - [Data inspection](docs/data_inspection.md): workbook structure, five selected cases, source/image discrepancies, and replay assumptions.
 - [Reproducibility](docs/reproducibility.md): environments, data integrity, experiment matrix, manifests, and known limits.
