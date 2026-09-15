@@ -7,7 +7,13 @@ name = "clintraj"
 version = "0.1.0"
 description = "Temporally gated, physician-facing clinical decision graph research framework"
 requires-python = ">=3.11"
-dependencies = ["pydantic==2.12.5", "openpyxl==3.1.5", "PyYAML==6.0.3", "langgraph==1.0.10"]
+dependencies = [
+  "pydantic==2.12.5", "openpyxl==3.1.5", "PyYAML==6.0.3", "langgraph==1.0.10",
+  "fastapi>=0.115,<1", "uvicorn[standard]>=0.34,<1", "sqlalchemy>=2.0.38,<3",
+  "alembic>=1.14,<2", "psycopg[binary,pool]>=3.2,<4", "pgvector>=0.3.6,<1",
+  "neo4j>=5.28,<6", "httpx>=0.28,<1", "pydantic-settings>=2.8,<3",
+  "langgraph-checkpoint-postgres>=3,<4", "fastembed>=0.7,<0.8", "defusedxml>=0.7,<1",
+]
 
 [project.optional-dependencies]
 dev = ["pytest==8.4.2", "ruff==0.15.6", "mypy==1.19.1", "types-PyYAML==6.0.12.20250915", "types-openpyxl==3.1.5.20250919"]
@@ -25,7 +31,7 @@ include = ["clintraj*", "configs*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
-markers = ["golden: local source workbook integration checks"]
+markers = ["golden: local source workbook integration checks", "services: opt-in local database and graph integration checks"]
 
 [tool.ruff]
 target-version = "py311"

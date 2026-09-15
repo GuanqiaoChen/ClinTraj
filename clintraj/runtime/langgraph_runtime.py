@@ -12,6 +12,7 @@ import os
 from typing import Any, TypedDict
 
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
@@ -40,21 +41,24 @@ class LangGraphRuntimeAdapter:
     Duplicate completed resumes return the stored snapshot and cannot reexecute.
     """
 
-    def __init__(self, coordinator: ClinicalCoordinator, executor: OfflineExecutor) -> None:
+    def __init__(self, coordinator: ClinicalCoordinator, executor: OfflineExecutor,
+                 *, checkpointer: BaseCheckpointSaver | None = None) -> None:
         if any(os.getenv(name, "").lower() in {"true", "1", "yes"}
                for name in ("LANGCHAIN_TRACING_V2", "LANGSMITH_TRACING")):
             raise PermissionError("External tracing is enabled; disable it before handling clinical state")
         self.coordinator = coordinator
         self.executor = executor
-        self.checkpointer = InMemorySaver()
+        self.checkpointer = checkpointer or InMemorySaver()
         self._receipts: dict[str, ClinicalState] = {}
         builder: StateGraph[WorkflowState, None, WorkflowState, WorkflowState] = StateGraph(WorkflowState)
         builder.add_node("recommend", self._recommend)
         builder.add_node("physician_review", self._physician_review)
+        builder.add_node("review_action", self._review_action)
         builder.add_node("execute", self._execute)
         builder.add_edge(START, "recommend")
         builder.add_edge("recommend", "physician_review")
-        builder.add_conditional_edges("physician_review",
+        builder.add_edge("physician_review", "review_action")
+        builder.add_conditional_edges("review_action",
             lambda state: "execute" if state["review_outcome"]["approved"] else "end",
             {"execute": "execute", "end": END})
         builder.add_edge("execute", END)
@@ -78,6 +82,12 @@ class LangGraphRuntimeAdapter:
             "allowed_responses": ["ACCEPT", "MODIFY", "REJECT"],
             "recommendation": state["recommendation"]})
         decision = PhysicianDecision.model_validate(raw_decision)
+        # Commit physician intent before error-prone model review. A failed review
+        # resumes from this durable intent, without consuming the interrupt twice.
+        return {"physician_decision": decision.model_dump(mode="json"), "status": "reviewing"}
+
+    def _review_action(self, state: WorkflowState) -> WorkflowState:
+        decision = PhysicianDecision.model_validate(state["physician_decision"])
         outcome = self.coordinator.review(ClinicalState.model_validate(state["clinical_state"]),
             Recommendation.model_validate(state["recommendation"]), decision)
         status = "approved" if outcome.approved else (
@@ -116,12 +126,22 @@ class LangGraphRuntimeAdapter:
         snapshot = self.graph.get_state(config)
         if not snapshot.values:
             raise ValueError("Unknown clinical workflow thread")
-        if not snapshot.next:
-            return dict(snapshot.values)
-        if snapshot.values.get("status") != "awaiting_physician":
-            raise ValueError("Workflow is not waiting for physician input")
         if decision.recommendation_id != snapshot.values["recommendation"]["recommendation_id"]:
             raise ValueError("Physician decision does not match the pending recommendation")
+        if snapshot.values.get("physician_decision") and snapshot.values["physician_decision"] != decision.model_dump(mode="json"):
+            raise ValueError("A different physician decision is already recorded")
+        if snapshot.values.get("status") in {"executed", "rejected", "blocked"} and not snapshot.next:
+            return dict(snapshot.values)
+        if snapshot.values.get("status") in {"reviewing", "approved"}:
+            return self.graph.invoke(None, config)
+        # Compatibility with failed pre-V1 checkpoints whose old interrupt node
+        # also performed model review. Only explicitly supplied intent is moved.
+        if any(task.name == "physician_review" and task.error for task in snapshot.tasks):
+            self.graph.update_state(config, {"physician_decision": decision.model_dump(mode="json"),
+                "status": "reviewing"}, as_node="physician_review")
+            return self.graph.invoke(None, config)
+        if snapshot.values.get("status") != "awaiting_physician":
+            raise ValueError("Workflow is not waiting for physician input")
         return self.graph.invoke(Command(resume=decision.model_dump(mode="json")), config)
 
     def advance(self, thread_id: str) -> dict[str, Any]:

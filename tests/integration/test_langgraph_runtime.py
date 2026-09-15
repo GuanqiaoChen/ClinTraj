@@ -148,3 +148,30 @@ def test_interpreted_risk_and_differential_persist_after_approval(monkeypatch):
     complete = runtime.resume("risk-thread", decision(paused))
     assert "unstable" in complete["clinical_state"]["risk_flags"]
     assert complete["clinical_state"]["differential"] == ["Undifferentiated synthetic symptom"]
+def test_failed_review_resumes_saved_intent_without_regeneration(monkeypatch):
+    runtime, state, model, calls = make_runtime(monkeypatch)
+    paused = runtime.start(state, "review-retry")
+    action = CandidateAction.model_validate(paused["recommendation"]["candidates"][0])
+    intent = decision(paused, "MODIFY", modified_action=action)
+    original_review = runtime.coordinator.review
+    attempts = []
+
+    def flaky_review(*args):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError("Transient independent review failure")
+        return original_review(*args)
+
+    runtime.coordinator.review = flaky_review
+    generations = model.calls.count("action_generator")
+    with pytest.raises(RuntimeError, match="Transient"):
+        runtime.resume("review-retry", intent)
+    # Reconstruct the runtime around the same store, as the HTTP service does.
+    recovered = LangGraphRuntimeAdapter(runtime.coordinator, runtime.executor, checkpointer=runtime.checkpointer)
+    with pytest.raises(ValueError, match="different physician"):
+        recovered.resume("review-retry", decision(paused, "REJECT"))
+    complete = recovered.resume("review-retry", intent)
+    assert complete["status"] == "executed"
+    assert len(calls) == 1 and model.calls.count("action_generator") == generations
+    assert recovered.resume("review-retry", intent)["status"] == "executed"
+    assert len(calls) == 1

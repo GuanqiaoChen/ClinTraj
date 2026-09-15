@@ -6,7 +6,7 @@ from importlib.resources.abc import Traversable
 from typing import TypeVar
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from clintraj.models.base import ModelAdapter, ModelRequest
 
@@ -40,5 +40,8 @@ class RoleAgent:
             if not isinstance(json.loads(output), dict):
                 raise ValueError("Expected object")
             return response_type.model_validate_json(output)
+        except ValidationError as exc:
+            fields = "; ".join(".".join(map(str, e["loc"])) + ":" + e["type"] for e in exc.errors())
+            raise StructuredOutputError(f"Invalid structured output from role {self.role}; fields {fields}") from None
         except (ValueError, TypeError):
             raise StructuredOutputError(f"Invalid structured output from role {self.role}") from None

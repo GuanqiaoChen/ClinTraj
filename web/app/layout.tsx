@@ -6,7 +6,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "ClinTraj — Clinical trajectories, in context",
-  description: "Explore five synthetic clinical trajectories and synchronized multi-agent execution in a deterministic, local research demo.",
+  description: "Physician-facing clinical decision support with visible evidence, grounded recommendations, durable review and live execution traces.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

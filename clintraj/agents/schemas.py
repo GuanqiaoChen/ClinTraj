@@ -138,6 +138,7 @@ class Recommendation(Message):
     specialist_advice: tuple[SpecialistAdvice, ...] = ()
     citation_ids: tuple[str, ...] = ()
     citation_hashes: dict[str, str] = Field(default_factory=dict)
+    candidate_citations: dict[str, tuple[str, ...]] = Field(default_factory=dict)
     inferred_risk_flags: tuple[str, ...] = ()
     proposed_differential: tuple[str, ...] = ()
     problem_summaries: dict[str, str] = Field(default_factory=dict)

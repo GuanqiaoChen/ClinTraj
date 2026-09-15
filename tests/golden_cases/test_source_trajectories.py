@@ -5,6 +5,7 @@ physician annotations never prevent graph loading or execution of these tests.
 """
 
 import hashlib
+import os
 from pathlib import Path
 
 import pytest
@@ -92,7 +93,7 @@ SOURCE_STRUCTURES = {
 
 @pytest.fixture(scope="module")
 def source_dataset():
-    path = Path(__file__).resolve().parents[2] / "医生审核版.xlsx"
+    path = Path(os.getenv("SOURCE_WORKBOOK", str(Path(__file__).resolve().parents[2] / "医生审核版.xlsx")))
     if not path.is_file():
         pytest.skip("Local source workbook absent; synthetic semantic tests remain available")
     before = hashlib.sha256(path.read_bytes()).hexdigest()
