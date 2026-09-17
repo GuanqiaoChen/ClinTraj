@@ -129,7 +129,8 @@
   background: #f2f3f5;
   display: flex;
   flex-direction: column;
-  height: clamp(440px, calc(100dvh - 410px), 650px);
+  /* Give the clinical content room; the page may scroll below the player. */
+  height: clamp(700px, 82dvh, 1000px);
 }
 
 .workspace-tour .tour-workspace-header {
@@ -512,7 +513,7 @@
   .workspace-tour .tour-site-header nav { gap: 15px; font-size: 11px; }
   .workspace-tour .tour-intro h1 { font-size: 25px; }
   .workspace-tour .tour-intro-description { max-width: 410px; }
-  .workspace-tour .tour-stage { height: 505px; }
+  .workspace-tour .tour-stage { height: 760px; }
   .workspace-tour .tour-columns { grid-template-columns: minmax(210px, .75fr) minmax(0, 1.8fr); gap: 10px; padding: 12px; }
   .workspace-tour .tour-patient-body { padding: 12px; }
   .workspace-tour .tour-candidates { grid-template-columns: 1fr; }

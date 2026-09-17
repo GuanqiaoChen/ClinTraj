@@ -1,5 +1,7 @@
 # clintraj.icu 部署准备
 
+> 当前只公开 `/demo` 与只读 `/workspace` 时，使用 [展示站部署步骤](showcase-deployment.md) 和独立 `docker-compose.showcase.yml`，无需模型、数据库或真实后端。
+
 > 2026-09-17：长期部署与本次上线规划以 [clintraj.icu 完整部署方案](clintraj-icu-deployment-plan.md) 为准，覆盖国内外访问、公开官网/回放、受邀研究环境和未来产品隔离。下文保留早期单域研究部署记录；其中默认口令、整个仓库挂载和单域入口须按新方案改造后才能用于公网，不能直接作为生产上线命令。
 
 域名在 IONOS 管理。用户尚无服务器，本次只准备配置；没有修改 DNS，也没有把本地服务发布到公网。

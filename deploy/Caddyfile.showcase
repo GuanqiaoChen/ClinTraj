@@ -1,0 +1,19 @@
+{$PUBLIC_DOMAIN:clintraj.icu} {
+    encode zstd gzip
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy same-origin
+    }
+
+    # Public pages and their assets only. API and observation paths fail closed.
+    @public {
+        method GET HEAD
+        path / /demo /demo/ /demo/trajectory /demo/trajectory/ /workspace /workspace/ /_next/static/* /icon.svg /favicon.ico
+    }
+    handle @public {
+        reverse_proxy frontend:3000
+    }
+    handle {
+        respond "Not found" 404
+    }
+}

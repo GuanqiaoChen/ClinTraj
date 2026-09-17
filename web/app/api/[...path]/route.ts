@@ -1,8 +1,12 @@
 import type { NextRequest } from "next/server";
+import { isShowcaseOnly } from "@/lib/server/showcase";
 
 export const dynamic = "force-dynamic";
 
 async function proxy(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+  if (isShowcaseOnly()) {
+    return Response.json({ detail: "展示站未开放临床接口。" }, { status: 404 });
+  }
   const { path } = await context.params;
   const origin = request.headers.get("origin");
   const allowedOrigins = [request.nextUrl.origin, process.env.PUBLIC_ORIGIN, "http://localhost:3000", "http://127.0.0.1:3000"];

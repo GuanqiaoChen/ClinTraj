@@ -1,0 +1,26 @@
+.workspace-preview .preview-notice { display:flex; align-items:center; gap:14px; padding:17px 20px; margin-bottom:22px; border:1px solid #b4bec9; border-radius:9px; background:#fff; color:#445263; }
+.workspace-preview .preview-notice strong { font-size:15px; color:#242d37; }
+.workspace-preview .preview-notice p { margin-top:4px; font-size:13px; line-height:1.7; }
+.workspace-preview .preview-notice a { display:flex; align-items:center; gap:8px; margin-left:auto; white-space:nowrap; font-size:13px; font-weight:600; }
+.workspace-preview .site-header nav a { display:flex; align-items:center; gap:8px; }
+.workspace-preview .ws-candidate { cursor:default; }
+.workspace-preview .ws-candidate:hover { border-color:#b1b8c2; }
+.workspace-preview .ws-candidate p { line-height:1.75; }
+.workspace-preview button:disabled { opacity:.55; }
+.workspace-preview input[readonly],.workspace-preview textarea[readonly] { background:#f8f9fb; color:#5b6673; }
+.workspace-preview .ws-detail summary span { display:flex; align-items:center; gap:8px; }
+.workspace-preview .ws-detail a { text-decoration:underline; text-underline-offset:3px; }
+.workspace-preview .preview-trajectory { display:flex; flex-wrap:wrap; gap:14px; padding:25px; background:radial-gradient(#d6dde4 .7px,transparent .7px) 0 0 / 20px 20px; }
+.workspace-preview .preview-trajectory > div { display:flex; align-items:center; gap:14px; color:#8895a3; }
+.workspace-preview .preview-trajectory article { width:210px; padding:16px; border:1px solid #aebbc8; border-radius:8px; background:#fff; }
+.workspace-preview .preview-trajectory article span { display:block; color:#7e8c9b; font-size:11px; margin-bottom:8px; }
+.workspace-preview .preview-trajectory article strong { color:#2e3d4c; font-size:15px; }
+.workspace-preview .preview-trajectory article p { margin-top:8px; color:#677788; font-size:12px; line-height:1.75; }
+@media(max-width:760px) {
+  .workspace-preview .preview-notice { align-items:flex-start; flex-wrap:wrap; padding:15px; }
+  .workspace-preview .preview-notice > div { flex:1; }
+  .workspace-preview .preview-notice a { margin-left:32px; }
+  .workspace-preview .preview-trajectory { flex-direction:column; }
+  .workspace-preview .preview-trajectory > div { align-items:stretch; }
+  .workspace-preview .preview-trajectory article { width:100%; }
+}
