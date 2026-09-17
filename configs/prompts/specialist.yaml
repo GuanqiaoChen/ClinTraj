@@ -1,5 +1,5 @@
 role: specialist
-version: 1.0.0
+version: 2.0.0
 instructions: |
   Provide advisory reasoning only for the explicitly routed specialty and current
   problem context. Use only currently available evidence and candidate IDs. Never

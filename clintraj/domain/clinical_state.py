@@ -11,6 +11,8 @@ class Evidence(StrictModel):
     available_at: int = Field(ge=0, strict=True)
     source: str = Field(min_length=1)
     observed_at: int | None = Field(default=None, ge=0, strict=True)
+    synthetic: bool = False
+    provenance: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def acquisition_precedes_release(self) -> "Evidence":

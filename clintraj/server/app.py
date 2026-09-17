@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 from clintraj.agents.base import StructuredOutputError
 from clintraj.agents.schemas import PhysicianDecision, Recommendation
 from clintraj.domain.clinical_state import ClinicalState, Evidence
-from clintraj.domain.problem_manager import ClinicalProblemManager, apply_candidate
+from clintraj.domain.problem_manager import ClinicalProblemManager
 from clintraj.domain.schemas import StrictModel
 from clintraj.environment.temporal import EvidenceRelease, TemporalEvidenceGate
 from clintraj.models.openai_compatible import ModelUnavailable, OpenAICompatibleAdapter
@@ -36,7 +36,9 @@ from .db import (
 )
 from .ingest import SYNTHETIC_CASES
 from .knowledge import EvidenceBundle, graph_driver
-from .pipeline import LiveCoordinator
+from .pipeline import LiveCoordinator, record_physician_action
+from .simulation import simulate
+from .specialties import registry
 from .trace import EventType, emitter, event_record
 
 
@@ -49,6 +51,9 @@ async def lifespan(app):
         saver.setup()
     # One backend process by design. Interrupted proposals can be retried, never approved implicitly.
     with db_session() as db:
+        for session in db.scalars(select(PatientSession).where(PatientSession.status == "simulating")):
+            session.status = "ready"
+            db.add(event_record(session.id, None, "SAFETY_WARNING", "evidence_simulator", {"code": "simulation_interrupted", "policy": "advisory"}))
         for run in db.scalars(select(DecisionRun).where(DecisionRun.status.in_(["running", "reviewing"]))):
             session = db.get(PatientSession, run.session_id)
             if run.status == "reviewing":
@@ -90,6 +95,7 @@ class NewSession(StrictModel):
     problem: str = Field(min_length=1, max_length=250)
     owner: str = Field(default="primary_team", min_length=1, max_length=80)
     synthetic: bool = False
+    simulate_evidence: bool | None = None
     provider: Literal["local", "deepseek"] = "local"
     external_consent: bool = False
     risk_flags: tuple[Literal["unstable", "acute_deterioration", "requires_escalation"], ...] = ()
@@ -127,7 +133,7 @@ def get_session(db, session_id: str, *, lock=False):
 
 
 def editable(session):
-    if session.status in {"running", "reviewing", "awaiting_physician"}:
+    if session.status in {"running", "reviewing", "awaiting_physician", "simulating"}:
         raise HTTPException(409, "Complete or reject the pending recommendation before changing observations")
 
 
@@ -159,6 +165,7 @@ def snapshot(db, session):
         select(PatientEvidence).where(PatientEvidence.session_id == session.id)) if r.id not in visible]
     return {"id": session.id, "title": session.title, "state": session.state,
         "status": session.status, "revision": session.revision, "synthetic": session.synthetic,
+        "simulate_evidence": session.simulate_evidence,
         "provider": session.provider, "scheduled_evidence": scheduled,
         "runs": [{"id": r.id, "status": r.status, "recommendation": r.recommendation,
                   "bundle": r.bundle, "error": r.error, "physician_decision": r.physician_decision} for r in runs]}
@@ -177,7 +184,9 @@ def configuration():
     cfg = settings()
     return {"default_provider": "local", "local_model": cfg.local_model_name,
             "deepseek_configured": bool(cfg.deepseek_api_key.get_secret_value()),
-            "deepseek_model": cfg.deepseek_model, "allow_external_clinical_data": cfg.allow_external_clinical_data}
+            "deepseek_model": cfg.deepseek_model, "allow_external_clinical_data": cfg.allow_external_clinical_data,
+            "decision_timeout": cfg.decision_timeout, "simulation_enabled": cfg.simulation_enabled,
+            "specialists": registry().model_dump(mode="json"), "audit_policy": "advisory"}
 
 
 @app.get("/api/models/status")
@@ -197,7 +206,10 @@ def knowledge_status():
         sources = [{"title": s.title, "version": s.version, "corpus": s.corpus,
                     "citation": s.citation, "metadata": s.metadata_json} for s in db.scalars(select(KnowledgeSource))]
         return {"sources": sources, "chunks": db.scalar(select(func.count()).select_from(KnowledgeChunk)),
-                "historical_cases": db.scalar(select(func.count()).select_from(HistoricalCase))}
+                "historical_cases": db.scalar(select(func.count()).select_from(HistoricalCase)),
+                "bge_m3_indexed": db.scalar(select(func.count()).select_from(KnowledgeChunk).where(
+                    KnowledgeChunk.retrieval_model == "BAAI/bge-m3", KnowledgeChunk.embedding_m3.is_not(None))),
+                "retrieval_profile": settings().retrieval_profile}
 
 
 @app.get("/api/synthetic-cases")
@@ -214,13 +226,16 @@ def sessions():
 
 @app.post("/api/sessions", status_code=201)
 def create_session(body: NewSession):
+    simulation = body.simulate_evidence if body.simulate_evidence is not None else body.synthetic
+    if simulation and (not body.synthetic or not settings().simulation_enabled):
+        raise HTTPException(422, "Simulation requires a synthetic research session")
     try:
         OpenAICompatibleAdapter(settings(), provider=body.provider,
                                 synthetic=body.synthetic, consent=body.external_consent)
     except (PermissionError, RuntimeError, ValueError) as exc:
         raise HTTPException(422, str(exc)) from None
     sid, eid = uid(), uid()
-    evidence = Evidence(evidence_id=eid, text=body.evidence, available_at=0, source="physician_input", observed_at=0)
+    evidence = Evidence(evidence_id=eid, text=body.evidence, available_at=0, source="physician_input", observed_at=0, synthetic=body.synthetic)
     state = ClinicalState(case_ref=sid, available_evidence=(evidence,), risk_flags=body.risk_flags)
     manager = ClinicalProblemManager(state)
     manager.create_problem("P1", body.problem, body.owner, clock=0,
@@ -228,7 +243,8 @@ def create_session(body: NewSession):
     state = manager.into_state(state)
     with db_session() as db:
         session = PatientSession(id=sid, title=body.title, state=state.model_dump(mode="json"),
-            provider=body.provider, synthetic=body.synthetic, external_consent=body.external_consent)
+            provider=body.provider, synthetic=body.synthetic, simulate_evidence=simulation,
+            external_consent=body.external_consent)
         db.add(session)
         db.flush()
         db.add(PatientEvidence(id=eid, session_id=sid, evidence=evidence.model_dump(mode="json")))
@@ -319,13 +335,13 @@ def risks(session_id: str, body: RiskReview):
 
 @contextmanager
 def runtime_for(session, run_id):
-    model = OpenAICompatibleAdapter(settings(), provider=session.provider,
+    cfg = settings().model_copy(update={"model_timeout": min(settings().model_timeout, settings().decision_timeout)})
+    model = OpenAICompatibleAdapter(cfg, provider=session.provider,
         synthetic=session.synthetic, consent=session.external_consent)
     # Private history never goes to cloud, even when current-patient cloud consent is enabled.
     coordinator = LiveCoordinator(model, emitter(session.id, run_id), allow_private=session.provider == "local")
     with PostgresSaver.from_conn_string(settings().checkpoint_url) as checkpointer:
-        yield LangGraphRuntimeAdapter(coordinator, lambda s, a, key: ClinicalState.model_validate(
-            apply_candidate(s, a).model_dump() | {"previous_actions": (*s.previous_actions, a.action)}),
+        yield LangGraphRuntimeAdapter(coordinator, lambda s, a, key: record_physician_action(s, a),
             checkpointer=checkpointer), coordinator
 
 
@@ -343,6 +359,11 @@ def propose_run(session_id, run_id):
             run.status = session.status = "awaiting_physician"
             db.add(event_record(session_id, run_id, "RUN_COMPLETED", "physician_review", {"status": "awaiting_physician"}))
             db.commit()
+        # Proposal is already durable and visible. Critic latency cannot delay physician choice.
+        try:
+            coordinator.audit(ClinicalState.model_validate(session.state), Recommendation.model_validate(result["recommendation"]))
+        except Exception:
+            emitter(session_id, run_id)("SAFETY_WARNING", "safety_critic", {"code": "audit_unavailable", "policy": "advisory"})
     except Exception as exc:
         # Do not print provider responses, patient payloads, database parameters or credentials.
         with db_session() as db:
@@ -370,7 +391,7 @@ def start_run(session_id: str, background: BackgroundTasks):
 
 
 @app.post("/api/sessions/{session_id}/runs/{run_id}/decision")
-def decide(session_id: str, run_id: str, decision: PhysicianDecision):
+def decide(session_id: str, run_id: str, decision: PhysicianDecision, background: BackgroundTasks):
     with db_session() as db:
         session = get_session(db, session_id, lock=True)
         run = db.get(DecisionRun, run_id)
@@ -386,10 +407,13 @@ def decide(session_id: str, run_id: str, decision: PhysicianDecision):
         if decision.recommendation_id != run.recommendation["recommendation_id"]:
             raise HTTPException(409, "Recommendation does not match this run")
         recommendation = Recommendation.model_validate(run.recommendation)
+        if set(decision.selected_candidate_ids) - {c.candidate_id for c in recommendation.candidates}:
+            raise HTTPException(422, "Unknown selected candidate")
         for citation_id, expected_hash in (recommendation.citation_hashes.items() if decision.response.value != "REJECT" else []):
             chunk = db.get(KnowledgeChunk, citation_id)
             if chunk is None or chunk.content_sha256 != expected_hash:
-                raise HTTPException(409, "Supporting source changed; reject and rerun")
+                db.add(event_record(session_id, run_id, "SAFETY_WARNING", "grounding", {
+                    "code": "source_changed", "citation_id": citation_id, "policy": "advisory"}))
         run.physician_decision = encoded
         run.status = session.status = "reviewing"
         bundle = run.bundle
@@ -407,17 +431,23 @@ def decide(session_id: str, run_id: str, decision: PhysicianDecision):
                 old = ClinicalState.model_validate(session.state)
                 new = ClinicalState.model_validate(result["clinical_state"])
                 session.state = new.model_dump(mode="json")
-                event = new.clinical_graph[-1]
-                if event.relation.value in {"BRANCH", "START"}:
-                    db.add(event_record(session_id, run_id, "PROBLEM_CREATED", "problem_manager", {"problem_id": event.problem_id}))
-                if event.relation.value == "BRANCH":
-                    db.add(event_record(session_id, run_id, "BRANCH_CREATED", "problem_manager", {"problem_id": event.problem_id}))
-                if event.relation.value == "RETURN" and event.problem_id in {p.problem_id for p in old.suspended_problems}:
-                    db.add(event_record(session_id, run_id, "PROBLEM_RESUMED", "problem_manager", {"problem_id": event.problem_id}))
-                db.add(event_record(session_id, run_id, "NODE_FINALIZED", "clinical_graph", {"event_id": event.event_id,
-                    "relation": event.relation.value, "problem_id": event.problem_id, "owner": event.owner}))
+                old_ids = {event.event_id for event in old.clinical_graph}
+                for event in new.clinical_graph:
+                    if event.event_id in old_ids:
+                        continue
+                    if event.relation.value in {"BRANCH", "START"}:
+                        db.add(event_record(session_id, run_id, "PROBLEM_CREATED", "problem_manager", {"problem_id": event.problem_id}))
+                    if event.relation.value == "BRANCH":
+                        db.add(event_record(session_id, run_id, "BRANCH_CREATED", "problem_manager", {"problem_id": event.problem_id}))
+                    if event.relation.value == "RETURN" and event.problem_id in {p.problem_id for p in old.suspended_problems}:
+                        db.add(event_record(session_id, run_id, "PROBLEM_RESUMED", "problem_manager", {"problem_id": event.problem_id}))
+                    db.add(event_record(session_id, run_id, "NODE_FINALIZED", "clinical_graph", {"event_id": event.event_id,
+                        "relation": event.relation.value, "problem_id": event.problem_id, "owner": event.owner}))
                 session.revision += 1
             run.status, session.status = result["status"], "ready"
+            if result["status"] == "executed" and session.synthetic and session.simulate_evidence:
+                session.status = "simulating"
+                background.add_task(simulate_run, session_id, run_id)
             run.error = None
             if result["status"] == "blocked":
                 run.error = result["review_outcome"]["reason"]
@@ -435,6 +465,48 @@ def decide(session_id: str, run_id: str, decision: PhysicianDecision):
             run.error = str(exc) if isinstance(exc, (StructuredOutputError, ModelUnavailable)) else "Review interrupted; retry the saved decision."
             db.commit()
         raise HTTPException(503, "Review interrupted; retry the same decision to resume safely") from None
+
+
+def simulate_run(session_id: str, run_id: str):
+    emit = emitter(session_id, run_id)
+    emit("AGENT_STARTED", "evidence_simulator", {})
+    try:
+        with db_session() as db:
+            session = get_session(db, session_id)
+            if not session.synthetic or not session.simulate_evidence:
+                return
+            state = ClinicalState.model_validate(session.state)
+            run = db.get(DecisionRun, run_id)
+            decision = PhysicianDecision.model_validate(run.physician_decision)
+            rec = Recommendation.model_validate(run.recommendation)
+            ids = decision.selected_candidate_ids or (rec.selected_candidate_id,)
+            by_id = {a.candidate_id: a.action for a in rec.candidates}
+            actions = [decision.modified_action.action] if decision.modified_action else [by_id[i] for i in ids if i is not None]
+        observation = simulate(state, actions, run_id)
+        with db_session() as db:
+            session = get_session(db, session_id, lock=True)
+            # Stable evidence ID and locked session make repeated completion idempotent.
+            if db.get(PatientEvidence, observation.evidence_id) is None:
+                db.add(PatientEvidence(id=observation.evidence_id, session_id=session_id,
+                    evidence=observation.model_dump(mode="json")))
+                db.flush()
+                gate_state(db, session, state.clock)
+                session.revision += 1
+            session.status = "ready"
+            if observation.provenance.get("generation_mode") != "model":
+                db.add(event_record(session_id, run_id, "SAFETY_WARNING", "evidence_simulator", {
+                    "code": "simulation_unavailable", "policy": "advisory", "provenance": observation.provenance}))
+            db.add(event_record(session_id, run_id, "SIMULATION_COMPLETED", "evidence_simulator", {
+                "evidence_id": observation.evidence_id, "provenance": observation.provenance}))
+            db.commit()
+    except Exception as exc:
+        with db_session() as db:
+            session = get_session(db, session_id, lock=True)
+            if session.status == "simulating":
+                session.status = "ready"
+            db.add(event_record(session_id, run_id, "SAFETY_WARNING", "evidence_simulator", {
+                "code": "simulation_failed", "error_type": type(exc).__name__, "policy": "advisory"}))
+            db.commit()
 
 
 @app.get("/api/sessions/{session_id}/events")

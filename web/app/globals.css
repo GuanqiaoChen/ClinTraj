@@ -4,7 +4,7 @@
 @theme inline { --color-background:var(--background); --color-foreground:var(--foreground); --font-sans:var(--font-geist-sans); --font-mono:var(--font-geist-mono); }
 * { box-sizing:border-box; }
 html { scroll-behavior:smooth; }
-body { margin:0; background:var(--background); color:var(--ink); font-family:var(--font-geist-sans),Arial,sans-serif; font-size:13px; -webkit-font-smoothing:antialiased; }
+body { margin:0; background:var(--background); color:var(--ink); font-family:var(--font-geist-sans),"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Noto Sans CJK SC","Source Han Sans SC",sans-serif; font-size:13px; -webkit-font-smoothing:antialiased; }
 button,input,select { font:inherit; }
 button,a,select { -webkit-tap-highlight-color:transparent; }
 button { cursor:pointer; }

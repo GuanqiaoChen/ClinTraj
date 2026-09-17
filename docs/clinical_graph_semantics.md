@@ -25,6 +25,29 @@ The clinical decision graph represents changes in patient-management reasoning o
 
 Safety validation checks these arguments before physician review by dry-running the domain transition. A valid dry run creates no persistent clinical event. The approved executor performs the transition using a revalidated state.
 
+### A declared relation is advisory; the performed transition is authoritative
+
+A relation is a structural property of a transition, not a separate clinical claim, so a proposal's
+declared relation is treated as advisory. `infer_relation()` in `clintraj/domain/relation_inference.py`
+derives the relation the action actually performs from the addressed problem and from the ownership or
+reintegration change the action makes, and `normalized_candidate()` records that relation on the
+candidate before any ranking, specialty review, physician review, or execution sees it. CONTINUE is the
+default: any further step under an existing active problem, whatever its action type, continues that
+problem. START, BRANCH, CONSULT, TRANSFER, and RETURN are recorded only when their own preconditions in
+the table above hold. A misclassified relation is therefore repaired rather than vetoed, and the repair
+is reported as a non-veto `relation_normalized` safety finding, so a clinically reasonable action is
+never rejected for a label the domain can derive itself.
+
+Derivation never resolves genuine ambiguity by guessing. An unidentifiable problem is inferred only when
+exactly one problem is active; with several active problems nothing is repaired and the unknown
+reference is reported as before. Structural repair is not clinical judgement either: an exactly repeated
+parent label is recognised as the same problem, whereas a differently worded label for the same clinical
+problem is still recorded as a branch. Every transition that remains impossible — an action on a
+suspended or resolved problem, a consultation or transfer without a destination specialty, a transfer to
+the current owner — still fails in `apply_candidate()` and is still vetoed. Disabling graph semantics
+disables derivation together with validation, so that ablation keeps the declared transition and its
+consequences.
+
 ## CONTINUE: sequential action within one problem
 
 An additional history question, focused examination, or follow-up test can continue the same active problem:
@@ -35,7 +58,7 @@ flowchart LR
     E2 -->|CONTINUE| E3[Event 3: P1 diagnostic test]
 ```
 
-All three events retain P1 and its owner. Changing the test modality does not by itself create a new clinical problem. `update_problem()` rejects an inactive problem and cannot perform ownership transfer. The coordinator requires transfer and consultation candidates to use their explicit structural relations, except that a CONSULT action may initiate a separately justified BRANCH.
+All three events retain P1 and its owner. Changing the test modality does not by itself create a new clinical problem. `update_problem()` rejects an inactive problem and cannot perform ownership transfer. Transfer and consultation actions are recorded with their own structural relations, which derivation supplies when a proposal omits them, except that a CONSULT action may initiate a separately justified BRANCH.
 
 ## BRANCH: explicit problem decomposition
 

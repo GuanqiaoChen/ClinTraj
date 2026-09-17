@@ -31,6 +31,11 @@ export interface CaseInput {
   steps: StepInput[];
 }
 
+const RELATION_LABELS: Record<RelationType, string> = {
+  START: '初始评估', CONTINUE: '继续', BRANCH: '新问题分支',
+  CONSULT: '会诊', TRANSFER: '转交主管', RETURN: '回归主线',
+};
+
 const beforeReviewStages = [
   'environment', 'temporal_gate', 'state_interpreter', 'problem_manager', 'action_generator',
   'information_gain', 'specialist_router', 'specialist_pool', 'retrieval', 'grounding',
@@ -39,24 +44,24 @@ const beforeReviewStages = [
 
 function stageSummary(agentId: string, step: ClinicalStep): string {
   const summaries: Record<string, string> = {
-    environment: 'Read the current synthetic observation window.',
-    temporal_gate: `Released ${step.newEvidence.length} current finding${step.newEvidence.length === 1 ? '' : 's'}; later evidence remains gated.`,
-    state_interpreter: 'Structured visible findings, uncertainty, and explicit risk flags.',
-    problem_manager: `Formulated current problems: ${step.problems.join('; ')}.`,
-    action_generator: `Proposed an actionable candidate: ${step.title.toLowerCase()}.`,
-    information_gain: 'Assessed information, benefit, urgency, harm, burden, and delay on an ordinal research rubric.',
-    specialist_router: `Routed explicit requests and current owners: ${step.specialties.map((id) => SPECIALTY_LABELS[id] ?? id).join(', ')}.`,
-    specialist_pool: 'Added selected specialty advice without an implicit ownership transfer.',
-    retrieval: 'Inspected the local synthetic source context; no external sources requested.',
-    grounding: 'Recorded evidence support and limitations; no guideline validation is claimed.',
-    validation: 'Checked visible evidence IDs and dry-ran the proposed domain transition.',
-    safety_critic: step.safety ? 'Flagged the acute-care concern; selected escalation remains subject to physician review.' : 'Completed the fixture safety review; no scripted veto is present.',
-    policy_ranking: 'Excluded vetoed candidates before applying ordinal policy ranking.',
-    arbiter: 'Explained the selected candidate and uncertainty; independent vetoes remain binding.',
-    executor: 'Applied the simulated accepted action after its safeguards passed.',
-    problem_transition: step.relation === 'RETURN' ? 'Appended a new reassessment with branch and ancestor parents; historical events remain unchanged.' : `Appended the ${step.relation.toLowerCase()} event with explicit problem identity and ownership.`,
+    environment: '读取当前的合成观察窗口。',
+    temporal_gate: `释放了 ${step.newEvidence.length} 条当前发现；更晚的证据仍处于锁定状态。`,
+    state_interpreter: '把可见发现、不确定性与明确的风险标记结构化。',
+    problem_manager: `梳理当前问题：${step.problems.join('；')}。`,
+    action_generator: `提出一个可执行候选：${step.title}。`,
+    information_gain: '按序数研究量表评估信息增益、获益、紧急程度、伤害、负担与延误。',
+    specialist_router: `按明确请求与当前主管团队路由：${step.specialties.map((id) => SPECIALTY_LABELS[id] ?? id).join('、')}。`,
+    specialist_pool: '补充了受邀专科的意见，未隐含转移主管权。',
+    retrieval: '检索了本地合成来源，未请求任何外部来源。',
+    grounding: '记录了证据支持与局限，不声称经过指南验证。',
+    validation: `校验可见证据编号，并试运行该转换；本步记录的轨迹关系为${RELATION_LABELS[step.relation]}。`,
+    safety_critic: step.safety ? '提示了急重症相关风险；所选的升级处置仍需医生审核。' : '完成了本演示的安全审查，脚本中没有否决项。',
+    policy_ranking: '先剔除被否决的候选，再进行序数策略排序。',
+    arbiter: '解释了被选中的候选与不确定性；独立否决依然有效。',
+    executor: '在通过各项防护后，执行了模拟接受的行动。',
+    problem_transition: step.relation === 'RETURN' ? '追加了一个带有分支与上游双父节点的新重新评估，历史事件保持不变。' : `追加了一个${RELATION_LABELS[step.relation]}事件，问题身份与主管关系明确。`,
   };
-  return summaries[agentId] ?? 'Completed this fixture stage.';
+  return summaries[agentId] ?? '完成了本演示的该阶段。';
 }
 
 function buildEvents(caseId: string, nodes: ClinicalStep[]): TraceEvent[] {
@@ -68,7 +73,7 @@ function buildEvents(caseId: string, nodes: ClinicalStep[]): TraceEvent[] {
   };
   const stage = (step: ClinicalStep, id: string) => {
     const agent = ARCHITECTURE_AGENTS.find((agent) => agent.id === id)!;
-    emit(step, 'AGENT_STARTED', `${agent.title} started.`, id);
+    emit(step, 'AGENT_STARTED', `${agent.title}已开始。`, id);
     if (id === 'safety_critic' && step.safety) emit(step, 'SAFETY_WARNING', step.safety, id);
     emit(step, 'AGENT_COMPLETED', stageSummary(id, step), id);
   };
@@ -77,12 +82,12 @@ function buildEvents(caseId: string, nodes: ClinicalStep[]): TraceEvent[] {
       if (id === 'specialist_pool' && step.specialties.length === 0) continue;
       stage(step, id);
     }
-    emit(step, 'AGENT_STARTED', 'Presented the recommendation at the physician decision boundary.', 'physician_hitl');
-    emit(step, 'PHYSICIAN_DECISION', 'Recorded simulated physician decision: ACCEPT. This replay records no real approval.', 'physician_hitl');
-    emit(step, 'AGENT_COMPLETED', 'The fixture acceptance is bound to this recommendation and observation state.', 'physician_hitl');
+    emit(step, 'AGENT_STARTED', '在医生决策边界上呈交本条建议。', 'physician_hitl');
+    emit(step, 'PHYSICIAN_DECISION', '记录了模拟的医生决定：接受。本回放不代表任何真实批准。', 'physician_hitl');
+    emit(step, 'AGENT_COMPLETED', '该模拟接受只绑定这条建议和当时的观察状态。', 'physician_hitl');
     stage(step, 'executor');
     stage(step, 'problem_transition');
-    emit(step, 'NODE_FINALIZED', `Finalized ${step.stepId}: ${step.title}. The next evidence window may now open.`, 'problem_transition');
+    emit(step, 'NODE_FINALIZED', `已保存 ${step.stepId}：${step.title}。下一批证据窗口现在可以开启。`, 'problem_transition');
   }
   return events;
 }
@@ -112,7 +117,7 @@ export function buildCase(input: CaseInput): DemoCase {
     const node: ClinicalStep = {
       stepId, actionType: spec.actionType, title: spec.title, newEvidence: spec.evidence,
       action: spec.action, clinicalRationale: spec.rationale, owner, specialties, relation,
-      problems: [...problems.values()].filter((problem) => problem.status !== 'RESOLVED').map((problem) => `${problem.label}${problem.status === 'SUSPENDED' ? ' · suspended' : ''}`),
+      problems: [...problems.values()].filter((problem) => problem.status !== 'RESOLVED').map((problem) => `${problem.label}${problem.status === 'SUSPENDED' ? ' · 已暂停' : ''}`),
       position: { x: depth * 280, y: spec.y ?? 105 }, problemId,
       parentProblemId: spec.parentProblemId ?? existing?.parent,
       problemStatus: problems.get(problemId)!.status,

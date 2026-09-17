@@ -4,7 +4,30 @@ from clintraj.agents.schemas import CandidateAction, SafetyAssessment, SafetyFin
 from clintraj.domain.action_types import ActionType
 from clintraj.domain.clinical_state import ClinicalState
 from clintraj.domain.problem_manager import apply_candidate
+from clintraj.domain.relation_inference import infer_relation
 from clintraj.domain.relation_types import RelationType
+
+
+def normalized_candidate(state: ClinicalState,
+                         candidate: CandidateAction) -> tuple[CandidateAction, tuple[SafetyFinding, ...]]:
+    """Record the transition an action performs instead of the one it declared.
+
+    A misclassified relation is a labelling error, not a clinical hazard, so the
+    repair is reported as a visible non-veto finding and the corrected candidate
+    is what gets ranked, reviewed and executed. Nothing else about the action is
+    changed, and an unrepairable transition is left for the deterministic checks.
+    """
+    repair = infer_relation(state, candidate)
+    if not repair.updates:
+        return candidate, ()
+    return candidate.model_copy(update=repair.updates), tuple(
+        SafetyFinding(code="relation_normalized", explanation=note, veto=False) for note in repair.notes)
+
+
+def normalized_candidates(state: ClinicalState, candidates: tuple[CandidateAction, ...]
+                          ) -> tuple[tuple[CandidateAction, ...], dict[str, tuple[SafetyFinding, ...]]]:
+    repaired = [normalized_candidate(state, candidate) for candidate in candidates]
+    return tuple(c for c, _ in repaired), {c.candidate_id: f for c, f in repaired if f}
 
 
 class SafetyCritic:
@@ -19,6 +42,11 @@ class SafetyCritic:
     def evaluate(self, state: ClinicalState, candidate: CandidateAction, *, clinical_rules: bool = True,
                  graph_validation: bool = True) -> SafetyAssessment:
         findings: list[SafetyFinding] = []
+        if graph_validation:
+            # Judge the transition the action performs; a relation label cannot by
+            # itself make an otherwise executable clinical action unsafe.
+            candidate, repairs = normalized_candidate(state, candidate)
+            findings.extend(repairs)
 
         def veto(code: str, explanation: str) -> None:
             findings.append(SafetyFinding(code=code, explanation=explanation))

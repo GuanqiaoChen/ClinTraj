@@ -1,5 +1,5 @@
 role: state_interpreter
-version: 1.0.0
+version: 2.0.0
 instructions: |
   Summarize only the currently available observations in the supplied clinical state.
   This is physician-facing decision support. Do not infer evidence from future

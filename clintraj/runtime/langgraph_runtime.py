@@ -108,7 +108,9 @@ class LangGraphRuntimeAdapter:
                 "differential": recommendation.proposed_differential if self.coordinator.config.multi_agent else observed.differential,
                 "uncertainty": tuple(dict.fromkeys((*observed.uncertainty, *recommendation.uncertainty))),
             })
-            updated = self.executor(clinical_state, outcome.action, execution_id)
+            updated = clinical_state
+            for index, action in enumerate(outcome.actions or (outcome.action,)):
+                updated = self.executor(updated, action, f"{execution_id}:{index}")
             updated = ClinicalState.model_validate(updated.model_dump())
             if updated.case_ref != clinical_state.case_ref or updated.clock <= clinical_state.clock:
                 raise ValueError("Executor must preserve case identity and advance observation time")
@@ -119,7 +121,21 @@ class LangGraphRuntimeAdapter:
         config = self._config(thread_id)
         if self.graph.get_state(config).values:
             raise ValueError("Thread already exists; use resume or advance")
-        return self.graph.invoke({"clinical_state": state.model_dump(mode="json")}, config)
+        return self._stream({"clinical_state": state.model_dump(mode="json")}, config)
+
+    def _stream(self, value, config):
+        interrupts = ()
+        for mode, update in self.graph.stream(value, config, stream_mode=["updates", "custom"]):
+            if isinstance(update, dict) and "__interrupt__" in update:
+                interrupts = update["__interrupt__"]
+            emit = getattr(self.coordinator, "emit", None)
+            if emit:
+                emit("GRAPH_UPDATE", "langgraph", {"stream_mode": mode,
+                     "nodes": list(update) if isinstance(update, dict) else [], "scope": "workflow"})
+        result = dict(self.graph.get_state(config).values)
+        if interrupts:
+            result["__interrupt__"] = interrupts
+        return result
 
     def resume(self, thread_id: str, decision: PhysicianDecision) -> dict[str, Any]:
         config = self._config(thread_id)
@@ -133,16 +149,16 @@ class LangGraphRuntimeAdapter:
         if snapshot.values.get("status") in {"executed", "rejected", "blocked"} and not snapshot.next:
             return dict(snapshot.values)
         if snapshot.values.get("status") in {"reviewing", "approved"}:
-            return self.graph.invoke(None, config)
+            return self._stream(None, config)
         # Compatibility with failed pre-V1 checkpoints whose old interrupt node
         # also performed model review. Only explicitly supplied intent is moved.
         if any(task.name == "physician_review" and task.error for task in snapshot.tasks):
             self.graph.update_state(config, {"physician_decision": decision.model_dump(mode="json"),
                 "status": "reviewing"}, as_node="physician_review")
-            return self.graph.invoke(None, config)
+            return self._stream(None, config)
         if snapshot.values.get("status") != "awaiting_physician":
             raise ValueError("Workflow is not waiting for physician input")
-        return self.graph.invoke(Command(resume=decision.model_dump(mode="json")), config)
+        return self._stream(Command(resume=decision.model_dump(mode="json")), config)
 
     def advance(self, thread_id: str) -> dict[str, Any]:
         config = self._config(thread_id)

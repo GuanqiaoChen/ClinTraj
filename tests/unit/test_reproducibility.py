@@ -16,5 +16,5 @@ def test_manifest_tolerates_missing_git_and_has_no_clinical_content(monkeypatch)
     assert manifest["external_calls"] is False
     assert manifest["source_hash_scope"] in {"source_checkout", "installed_package"}
     assert manifest["source_artifact_count"] > 40
-    assert len(manifest["prompt_sha256"]) == 8
+    assert set(manifest["prompt_sha256"]) == {p.name for p in files("configs.prompts").iterdir() if p.name.endswith(".yaml")}
     assert "available_evidence" not in str(manifest)

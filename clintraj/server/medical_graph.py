@@ -10,23 +10,27 @@ from clintraj.domain.schemas import StrictModel
 
 from .db import KnowledgeChunk, KnowledgeSource, db_session
 from .knowledge import graph_driver
+from .knowledge_schema import KnowledgeFacets
 
 
 class MedicalConcept(StrictModel):
     id: str = Field(min_length=1)
     label: str = Field(min_length=1)
-    kind: Literal["disease", "symptom", "test", "drug", "procedure", "care_setting", "contraindication", "guideline"]
+    kind: Literal["disease", "symptom", "test", "drug", "procedure", "care_setting", "contraindication", "guideline", "imaging_finding", "anatomy", "pathogen", "histology", "stage", "biomarker", "exposure"]
+    terminology_system: str | None = None
+    terminology_version: str | None = None
 
 
 class MedicalRelation(StrictModel):
     id: str = Field(min_length=1)
     head: MedicalConcept
     tail: MedicalConcept
-    relation: Literal["HAS_PHENOTYPE", "EVALUATED_BY", "RECOMMENDS", "RECOMMENDS_AGAINST", "CONTRAINDICATED_WITH", "INTERACTS_WITH"]
+    relation: Literal["HAS_PHENOTYPE", "EVALUATED_BY", "RECOMMENDS", "RECOMMENDS_AGAINST", "CONTRAINDICATED_WITH", "INTERACTS_WITH", "HAS_IMAGING_FINDING", "LOCATED_IN", "HAS_PATHOGEN", "HAS_HISTOLOGY", "HAS_STAGE", "HAS_BIOMARKER", "MODIFIES_EFFECT", "DIFFERENTIAL_OF"]
     supporting_chunk_id: str = Field(min_length=1)
     source_excerpt: str = Field(min_length=20)
     applicability: str = Field(min_length=1)
     curator: str = Field(min_length=1)
+    facets: KnowledgeFacets = Field(default_factory=KnowledgeFacets)
 
 
 def ingest_relations(relations: list[MedicalRelation]):
@@ -38,7 +42,11 @@ def ingest_relations(relations: list[MedicalRelation]):
                 raise ValueError("Medical relation requires an exact excerpt from a stored public chunk")
             source = db.get(KnowledgeSource, chunk.source_id)
             rows.append({**relation.model_dump(mode="json"), "source_id": source.id,
-                         "version": source.version, "content_sha256": chunk.content_sha256})
+                         "version": source.version, "content_sha256": chunk.content_sha256,
+                         "facets_json": relation.facets.model_dump_json()})
+            if relation.facets.annotation_method != "unannotated":
+                chunk.metadata_json = {**chunk.metadata_json, "facets": relation.facets.model_dump(mode="json")}
+        db.commit()
     with graph_driver().session() as graph:
         graph.run("CREATE CONSTRAINT medical_assertion_id IF NOT EXISTS FOR (n:MedicalAssertion) REQUIRE n.id IS UNIQUE").consume()
         graph.run("""UNWIND $rows AS row
@@ -47,7 +55,9 @@ def ingest_relations(relations: list[MedicalRelation]):
             MERGE (a:MedicalAssertion {id:row.id})
             SET a.relation=row.relation, a.applicability=row.applicability, a.curator=row.curator,
                 a.source_id=row.source_id, a.version=row.version, a.content_sha256=row.content_sha256,
-                a.source_excerpt=row.source_excerpt
+                a.source_excerpt=row.source_excerpt, a.facets_json=row.facets_json,
+                head.terminology_system=row.head.terminology_system, head.terminology_version=row.head.terminology_version,
+                tail.terminology_system=row.tail.terminology_system, tail.terminology_version=row.tail.terminology_version
             MERGE (a)-[:SUBJECT]->(head) MERGE (a)-[:OBJECT]->(tail)
             WITH a,head,tail,row MATCH (chunk:Chunk {id:row.supporting_chunk_id})
             MERGE (a)-[:SUPPORTED_BY]->(chunk)

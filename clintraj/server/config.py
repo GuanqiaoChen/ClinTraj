@@ -22,6 +22,19 @@ class Settings(BaseSettings):
     embedding_cache: str = "outputs/models"
     embedding_threads: int = Field(default=4, ge=1)
     model_timeout: float = Field(default=180, ge=1)
+    decision_timeout: float = Field(default=30, ge=1, le=120)
+    triage_timeout: float = Field(default=4, ge=.1)
+    retrieval_timeout: float = Field(default=8, ge=.1)
+    rerank_candidates: int = Field(default=12, ge=4, le=48)
+    specialist_timeout: float = Field(default=5, ge=.1)
+    audit_timeout: float = Field(default=8, ge=.1)
+    simulation_enabled: bool = True
+    simulation_model: str = "qwen2.5:3b"
+    simulation_timeout: float = Field(default=25, ge=.1, le=60)
+    retrieval_profile: str = "bge_m3"
+    retrieval_service_url: str = "http://localhost:8010"
+    reranker_model: str = "BAAI/bge-reranker-v2-m3"
+    specialist_registry: str = "configs/specialists.yaml"
     allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     source_workbook: str = "医生审核版.xlsx"
 

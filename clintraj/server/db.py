@@ -45,6 +45,9 @@ class KnowledgeChunk(Base):
     concept_ids: Mapped[list] = mapped_column(JSONB, default=list)
     content_sha256: Mapped[str] = mapped_column(String(64))
     embedding: Mapped[list] = mapped_column(Vector(384))
+    embedding_m3: Mapped[list | None] = mapped_column(Vector(1024), nullable=True)
+    sparse_m3: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    retrieval_model: Mapped[str | None] = mapped_column(Text, nullable=True)
     search_vector: Mapped[str] = mapped_column(TSVECTOR)
     metadata_json: Mapped[dict] = mapped_column(JSONB, default=dict)
     __table_args__ = (
@@ -69,6 +72,7 @@ class PatientSession(Base):
     title: Mapped[str] = mapped_column(String(160))
     state: Mapped[dict] = mapped_column(JSONB)
     synthetic: Mapped[bool] = mapped_column(default=False)
+    simulate_evidence: Mapped[bool] = mapped_column(default=False, server_default="false")
     provider: Mapped[str] = mapped_column(String, default="local")
     external_consent: Mapped[bool] = mapped_column(default=False)
     status: Mapped[str] = mapped_column(String, default="ready")

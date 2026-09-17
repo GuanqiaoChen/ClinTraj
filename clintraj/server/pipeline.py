@@ -1,27 +1,45 @@
-"""Live role pipeline reusing ClinTraj's independent domain, safety and review contracts."""
-from typing import Any
+"""Deadline-bounded proposals; advisory audits never suppress physician choices."""
+from importlib.resources import files
+from time import monotonic
+from typing import Any, TypedDict
 from uuid import uuid4
 
+from langgraph.graph import END, START, StateGraph
 from pydantic import Field
 
-from clintraj.agents.base import StructuredOutputError
+from clintraj.agents.base import RoleAgent, StructuredOutputError
 from clintraj.agents.coordinator import ClinicalCoordinator, state_fingerprint
 from clintraj.agents.schemas import (
     ActionGeneration,
-    ArbiterExplanation,
+    CandidateAction,
     Message,
     PhysicianResponse,
-    ProblemFormulation,
     Recommendation,
     ReviewOutcome,
     SafetyAssessment,
     SafetyFinding,
     SafetyReview,
     SpecialistAdvice,
-    StateInterpretation,
 )
+from clintraj.domain.action_types import ActionType
 from clintraj.domain.clinical_state import ClinicalState
-from clintraj.server.knowledge import EvidenceBundle, HybridRetriever
+from clintraj.domain.problem_manager import ClinicalProblemManager, apply_candidate
+
+from .budget import bounded, submit
+from .config import settings
+from .knowledge import EvidenceBundle, HybridRetriever
+from .specialties import fallback_routes, registry
+
+OUTPUT_LANGUAGE = "自由文本使用简体中文；字段、枚举、证据和引用编号保持原样。只给简洁理由，不输出思维链。"
+
+
+class Triage(Message):
+    summary: str
+    differential: tuple[str, ...] = ()
+    specialties: tuple[str, ...] = ()
+    routing_reason: str = ""
+    risk_flags: tuple[str, ...] = ()
+    uncertainty: tuple[str, ...] = ()
 
 
 class GroundedClaims(Message):
@@ -29,9 +47,12 @@ class GroundedClaims(Message):
     limitations: tuple[str, ...] = ()
 
 
-def model_documents(bundle):
-    # Citation aliases reduce copying errors; all public provenance stays in the saved bundle.
-    return [{"citation_id": f"K{i + 1}", "title": e.source, "kind": e.kind,
+class DecisionDraft(ActionGeneration):
+    candidate_citations: dict[str, tuple[str, ...]] = Field(default_factory=dict)
+
+
+def model_documents(bundle, aliases=None):
+    return [{"citation_id": aliases[e.citation_id] if aliases else f"K{i + 1}", "title": e.source, "kind": e.kind,
              "corpus": e.corpus, "text": e.text[:1200], "review_status": e.review_status,
              "source_qualified_relations": e.medical_relations}
             for i, e in enumerate(bundle.items)]
@@ -44,7 +65,6 @@ def expand_citations(grounding, bundle):
 
 
 def patient_reference_aliases(value, references):
-    """Map only patient-reference fields; never rewrite prose or knowledge citations."""
     if isinstance(value, list):
         return [patient_reference_aliases(item, references) for item in value]
     if not isinstance(value, dict):
@@ -54,172 +74,266 @@ def patient_reference_aliases(value, references):
         patient_reference_aliases(item, references) for key, item in value.items()}
 
 
+def fallback_candidates(state: ClinicalState) -> tuple[CandidateAction, ...]:
+    problem = next(iter(state.active_problems), None)
+    label = problem.label if problem else "当前临床问题"
+    return tuple(CandidateAction(candidate_id=f"fallback-{i}", action_type=kind,
+        action=action, rationale="限时备用方案：详细模型分析未完成，由医生结合当前资料选择或自行输入。",
+        evidence_ids=tuple(e.evidence_id for e in state.available_evidence),
+        problem_id=problem.problem_id if problem else None,
+        uncertainty=("尚未获得本轮完整模型分析。",))
+        for i, (kind, action) in enumerate((
+            (ActionType.REASSESS, f"立即复评{label}的当前状态、生命体征与处置优先级"),
+            (ActionType.ASK_HISTORY, f"补充{label}相关病程、既往史、用药和过敏信息"),
+            (ActionType.EXAM, f"围绕{label}补充针对性查体，确定下一项检查需求")), 1))
+
+
+def record_physician_action(state: ClinicalState, action: CandidateAction) -> ClinicalState:
+    """Record exact intent; invalid graph metadata becomes a reassessment, never a fake transfer."""
+    try:
+        updated = apply_candidate(state, action)
+    except ValueError:
+        manager = ClinicalProblemManager(state)
+        refs = tuple(e for e in action.evidence_ids if e in {v.evidence_id for v in state.available_evidence})
+        reason = f"记录医生决策：{action.action}；{action.rationale}（图关系待核对）"
+        problem = next(iter(state.active_problems), None)
+        if problem:
+            manager.update_problem(problem.problem_id, clock=state.clock + 1,
+                rationale=reason, evidence_ids=refs, action_type=ActionType.REASSESS)
+        else:
+            manager.create_problem(f"P-{uuid4().hex[:10]}", "医生自主决策", "primary_team",
+                clock=state.clock + 1, rationale=reason, evidence_ids=refs)
+        updated = manager.into_state(state, clock=state.clock + 1)
+    return ClinicalState.model_validate(updated.model_dump() | {
+        "previous_actions": (*state.previous_actions, action.action)})
+
+
+class ProposalState(TypedDict, total=False):
+    stage: str
+
+
 class LiveCoordinator(ClinicalCoordinator):
     def __init__(self, model, emit, *, allow_private: bool, retriever=None):
         super().__init__(model)
+        self.agents["triage"] = RoleAgent("triage", model, files("configs.prompts"))
         self.emit = emit
         self.allow_private = allow_private
         self.hybrid = retriever or HybridRetriever()
-        self.bundle: EvidenceBundle | None = None
+        self.bundle = EvidenceBundle(embedding_model=settings().embedding_model)
+        self.invoked: list[str] = []
 
-    def review(self, state, recommendation, decision):
-        if decision.response != PhysicianResponse.MODIFY:
-            return super().review(state, recommendation, decision)
-        if decision.recommendation_id != recommendation.recommendation_id or recommendation.state_fingerprint != state_fingerprint(state):
-            return ReviewOutcome(approved=False, reason="Recommendation or clinical state changed")
-        action = decision.modified_action
-        if self.bundle is None:
-            raise ValueError("Modified review requires persisted retrieval provenance")
-        working = ClinicalState.model_validate(state.model_dump() | {
-            "risk_flags": tuple(dict.fromkeys((*state.risk_flags, *recommendation.inferred_risk_flags)))})
-        payload = {"state": self._visible_payload(working), "candidates": [action.model_dump(mode="json")],
-                   "retrieved_documents": model_documents(self.bundle),
-                   "physician_modification": True}
-        grounding = self.role("grounding", {**payload,
-            "instruction": "Map the single modified candidate to actual supporting citation_ids; do not carry over support for an earlier action."}, GroundedClaims)
-        grounding = expand_citations(grounding, self.bundle)
-        documents = {e.citation_id: e for e in self.bundle.items}
-        refs = grounding.candidate_citations.get(action.candidate_id, ())
-        if set(grounding.candidate_citations) - {action.candidate_id} or set(refs) - documents.keys():
-            return ReviewOutcome(approved=False, reason="Modified action has invalid grounding references")
-        critique = self.role("safety_critic", {**payload, "grounding": grounding.model_dump(mode="json")}, SafetyReview)
-        if len(critique.assessments) != 1 or critique.assessments[0].candidate_id != action.candidate_id:
-            raise StructuredOutputError("Modified action safety assessment is missing")
-        findings = self.safety.evaluate(working, action).findings + critique.assessments[0].findings
-        if action.action_type.value in {"TREATMENT", "PROCEDURE", "DISCHARGE_FOLLOWUP"} and not any(
-            documents[r].corpus == "public" and documents[r].kind == "article" for r in refs):
-            findings += (SafetyFinding(code="insufficient_public_grounding", explanation="Modified action lacks public article support."),)
-        safety = SafetyAssessment(candidate_id=action.candidate_id, findings=findings)
-        for finding in findings:
-            self.emit("SAFETY_WARNING", "safety_critic", {"code": finding.code, "veto": finding.veto})
-        if safety.vetoed:
-            return ReviewOutcome(approved=False, reason="Modified action vetoed; reconsider and run a new decision", safety=safety)
-        return ReviewOutcome(approved=True, action=action, reason="Physician modification passed independent review", safety=safety)
+    def warning(self, agent, code, **detail):
+        self.emit("SAFETY_WARNING", agent, {"code": code, "policy": "advisory", **detail})
 
-    def role(self, name, payload, schema):
+    def _call(self, name, payload, schema):
         aliases = {e["evidence_id"]: f"E{i + 1}" for i, e in enumerate(
             payload.get("state", {}).get("available_evidence", []))}
-        payload = patient_reference_aliases(payload, aliases)
-        originals = {alias: original for original, alias in aliases.items()}
+        encoded = {**patient_reference_aliases(payload, aliases), "output_language": OUTPUT_LANGUAGE}
         if name == "safety_critic":
-            payload = {**payload, "required_json_shape": {
-                "assessments": [{"candidate_id": c["candidate_id"], "findings": []} for c in payload["candidates"]],
-                "uncertainty": []}, "schema_reminder": "Each assessment has ONLY candidate_id and findings. Each finding has ONLY code, explanation and veto. Never add note, rationale, safety_status or recommendation fields. Put brief limitations in the top-level uncertainty array. Replace empty findings with structured findings when indicated."}
-        detail = {"specialty": payload["specialty"]} if "specialty" in payload else {}
-        self.emit("AGENT_STARTED", name, detail)
-        for attempt in range(2):
-            try:
-                result = self.agents[name].run(payload, schema)
-                result = schema.model_validate(patient_reference_aliases(result.model_dump(mode="json"), originals))
-                self.emit("AGENT_COMPLETED", name, detail)
-                return result
-            except StructuredOutputError as exc:
-                if attempt:
-                    raise
-                payload = {**payload, "format_correction": "Previous response failed JSON schema validation. Return only the exact required schema and allowed enums; omit extra keys. " + str(exc)}
+            encoded["required_json_shape"] = {"assessments": [
+                {"candidate_id": c["candidate_id"], "findings": []} for c in payload["candidates"]], "uncertainty": []}
+            encoded["schema_reminder"] = "Each assessment contains only candidate_id and findings. Each finding contains only code, explanation, veto. No severity, rationale, safety_status or recommendation keys."
+        result = self.agents[name].run(encoded, schema)
+        return schema.model_validate(patient_reference_aliases(result.model_dump(mode="json"),
+            {alias: original for original, alias in aliases.items()}))
+
+    def role(self, name, payload, schema, timeout):
+        self.invoked.append(name)
+        self.emit("AGENT_STARTED", name, {})
+        try:
+            value = bounded(self._call, timeout, name, payload, schema)
+            self.emit("AGENT_COMPLETED", name, {})
+            return value
+        except Exception as exc:
+            self.warning(name, "role_unavailable", error_type=type(exc).__name__,
+                **({"schema_error": str(exc)} if isinstance(exc, StructuredOutputError) else {}))
+            return None
+
+    def review(self, state, recommendation, decision):
+        if decision.recommendation_id != recommendation.recommendation_id or recommendation.state_fingerprint != state_fingerprint(state):
+            return ReviewOutcome(approved=False, reason="Recommendation or clinical state changed")
+        if decision.response == PhysicianResponse.REJECT:
+            return ReviewOutcome(approved=False, reason="医生拒绝全部候选方案。")
+        if decision.response == PhysicianResponse.MODIFY:
+            actions = (decision.modified_action,)
+        else:
+            ids = decision.selected_candidate_ids or (recommendation.selected_candidate_id,)
+            by_id = {a.candidate_id: a for a in recommendation.candidates}
+            if not ids or any(i not in by_id for i in ids):
+                return ReviewOutcome(approved=False, reason="Unknown selected candidate")
+            actions = tuple(by_id[i] for i in ids)
+        for action in actions:
+            for finding in self.safety.evaluate(state, action).findings:
+                self.warning("physician_review", finding.code, candidate_id=action.candidate_id,
+                    explanation=finding.explanation, would_veto=finding.veto)
+        return ReviewOutcome(approved=True, action=actions[0], actions=actions,
+                             reason="已记录医生选择；规则意见仅用于观察与研究。")
+
+    def audit(self, state, recommendation):
+        """Independent critic runs after publication and never mutates candidates."""
+        critique = self.role("safety_critic", {"state": self._visible_payload(state),
+            "candidates": [c.model_dump(mode="json") for c in recommendation.candidates],
+            "retrieved_documents": model_documents(self.bundle)}, SafetyReview, settings().audit_timeout)
+        if critique:
+            ids = {c.candidate_id for c in recommendation.candidates}
+            for assessment in critique.assessments:
+                if assessment.candidate_id not in ids:
+                    self.warning("safety_critic", "unknown_audit_candidate")
+                    continue
+                for finding in assessment.findings:
+                    self.warning("safety_critic", finding.code, candidate_id=assessment.candidate_id,
+                        explanation=finding.explanation, would_veto=finding.veto)
+        self.emit("AUDIT_COMPLETED", "safety_critic", {"policy": "advisory"})
 
     def propose(self, state: ClinicalState) -> Recommendation:
         state = ClinicalState.model_validate(state.model_dump())
-        self.emit("AGENT_STARTED", "temporal_gate", {})
-        self.emit("AGENT_COMPLETED", "temporal_gate", {"visible_evidence_count": len(state.available_evidence)})
+        start = monotonic()
+        deadline = start + settings().decision_timeout
         context: dict[str, Any] = {"state": self._visible_payload(state)}
-        interpretation = self.role("state_interpreter", context, StateInterpretation)
-        self._validate_evidence(state, interpretation.evidence_ids)
-        working = ClinicalState.model_validate(state.model_dump() | {
-            "risk_flags": tuple(dict.fromkeys((*state.risk_flags, *interpretation.risk_flags)))})
-        context = {"state": self._visible_payload(working), "interpretation": interpretation.model_dump(mode="json"),
-            "allowed_specialties": sorted(self.router.specialties),
-            "reference_contract": {
-                "patient_evidence_ids": [e.evidence_id for e in working.available_evidence],
-                "instruction": "Every evidence_ids field refers ONLY to the supplied patient_evidence_ids. K1, K2 etc are knowledge citations for the grounding role, NEVER patient evidence. suggested_specialties must use exact allowed_specialties values; use pulmonology for respiratory concerns."}}
-        self.emit("STATE_UPDATED", "state_interpreter", {"risk_flags": list(working.risk_flags), "provisional": True})
-        formulation = self.role("problem_manager", context, ProblemFormulation)
-        self._validate_evidence(state, formulation.evidence_ids)
-        known = {p.problem_id for p in (*state.active_problems, *state.suspended_problems, *state.resolved_problems)}
-        if set(formulation.problem_summaries) - known:
-            raise StructuredOutputError("Problem formulation refers to unknown IDs")
-        context["formulation"] = formulation.model_dump(mode="json")
-        self.emit("AGENT_STARTED", "retrieval", {})
-        # Interpreted concepts supplement the multilingual encoder's free-text query.
-        query = " ".join([interpretation.summary, *formulation.differential,
-                          *(p.label for p in state.active_problems)])[:3500]
-        self.bundle = self.hybrid.retrieve_bundle(query, allow_private=self.allow_private,
-                                                  exclude_document_ids=(state.case_ref,))
-        context["retrieved_documents"] = model_documents(self.bundle)
-        self.emit("RETRIEVAL_COMPLETED", "retrieval", {
-            "public_count": len(self.bundle.public), "historical_count": len(self.bundle.historical),
-            "channels": self.bundle.channels, "citation_ids": [e.citation_id for e in self.bundle.items]})
-        self.emit("AGENT_COMPLETED", "retrieval", {})
-        # Route from interpreted current problems; never invoke every specialty.
-        routed = set(formulation.suggested_specialties) & self.router.specialties
-        routed |= {p.owner for p in working.active_problems} & self.router.specialties
-        if set(working.risk_flags) & {"unstable", "acute_deterioration", "requires_escalation"}:
-            routed.add("critical_care")
-        specialties = sorted(routed, key=lambda s: (s != "critical_care", s))[:2]
-        advice = []
-        for specialty in specialties:
-            item = self.role("specialist", {**context, "specialty": specialty,
-                "candidates": [], "instruction": "Give prospective specialty considerations; candidate_ids must be empty because actions are generated next."}, SpecialistAdvice)
-            self._validate_evidence(state, item.evidence_ids)
-            if item.specialty != specialty or item.candidate_ids:
-                raise StructuredOutputError("Specialist output references an unknown candidate or specialty")
-            advice.append(item)
-        context["specialist_advice"] = [a.model_dump(mode="json") for a in advice]
-        context["action_contract"] = "Use only patient evidence IDs in each candidate. prerequisites lists unmet requirements that block execution, not routine steps or assumed equipment. Put uncertain resources in uncertainty and request confirmation when necessary. Do not claim a prerequisite is satisfied without visible evidence."
-        generated = self.role("action_generator", context, ActionGeneration)
-        candidates = generated.candidates
-        context["candidates"] = [c.model_dump(mode="json") for c in candidates]
-        self.emit("ACTION_PROPOSED", "action_generator", {"candidate_ids": [c.candidate_id for c in candidates]})
-        grounding = self.role("grounding", {**context,
-            "instruction": "Map candidate IDs to supporting citation_id values from retrieved_documents. Do not use patient evidence IDs here. Include only sources actually supporting that specific action. Terminology does not establish treatment efficacy. Empty map is valid when no supporting source exists."}, GroundedClaims)
-        grounding = expand_citations(grounding, self.bundle)
-        candidate_ids = {c.candidate_id for c in candidates}
-        documents = {e.citation_id: e for e in self.bundle.items}
-        if set(grounding.candidate_citations) - candidate_ids or any(
-            set(refs) - documents.keys() for refs in grounding.candidate_citations.values()):
-            raise StructuredOutputError("Grounding produced fabricated citation or candidate IDs")
-        # Independent critic sees observations, proposals and sources, but not generator discussion.
-        critique = self.role("safety_critic", {"state": self._visible_payload(working),
-            "candidates": context["candidates"], "retrieved_documents": context["retrieved_documents"],
-            "grounding": grounding.model_dump(mode="json")}, SafetyReview)
-        if {s.candidate_id for s in critique.assessments} != candidate_ids or len(critique.assessments) != len(candidates):
-            raise StructuredOutputError("Safety critic must assess every candidate exactly once")
+        triage = Triage(summary="待分诊")
+        routes: tuple[str, ...] = ()
+        advice: list[SpecialistAdvice] = []
+        draft: DecisionDraft | None = None
         assessments = []
-        for candidate in candidates:
-            deterministic = self.safety.evaluate(working, candidate)
-            model_findings = next(s.findings for s in critique.assessments if s.candidate_id == candidate.candidate_id)
-            findings = deterministic.findings + model_findings
-            refs = grounding.candidate_citations.get(candidate.candidate_id, ())
-            if candidate.action_type.value in {"TREATMENT", "PROCEDURE", "DISCHARGE_FOLLOWUP"} and not any(
-                documents[r].corpus == "public" and documents[r].kind == "article" for r in refs):
-                findings += (SafetyFinding(code="insufficient_public_grounding",
-                    explanation="Treatment, procedure or discharge proposal lacks supporting public article evidence."),)
-            assessment = SafetyAssessment(candidate_id=candidate.candidate_id, findings=findings)
-            assessments.append(assessment)
-            for finding in findings:
-                self.emit("SAFETY_WARNING", "safety_critic", {"candidate_id": candidate.candidate_id,
-                    "code": finding.code, "veto": finding.veto})
-        eligible = tuple(c for c, a in zip(candidates, assessments, strict=True) if not a.vetoed)
-        ranked = self.policy.rank(eligible)
-        selected = ranked[0].candidate_id if ranked else None
-        arbiter = self.role("arbiter", {**context, "grounding": grounding.model_dump(mode="json"),
-            "rankings": [r.model_dump(mode="json") for r in ranked],
-            "safety_assessments": [a.model_dump(mode="json") for a in assessments],
-            "selected_candidate_id": selected}, ArbiterExplanation)
-        self.emit("ARBITRATION_COMPLETED", "arbiter", {"selected_candidate_id": selected,
-                  "eligible_count": len(eligible), "veto_count": sum(a.vetoed for a in assessments)})
-        cited = tuple(dict.fromkeys(r for refs in grounding.candidate_citations.values() for r in refs))
-        roles = ("state_interpreter", "problem_manager", "specialist", "action_generator", "grounding", "safety_critic", "arbiter")
+        candidates: tuple[CandidateAction, ...] = ()
+        citations: dict[str, tuple[str, ...]] = {}
+
+        def remaining():
+            return max(.001, deadline - monotonic())
+
+        def triage_node(_):
+            nonlocal triage, routes
+            profiles = registry()
+            context["available_specialists"] = {k: p.model_dump(mode="json") for k, p in profiles.specialists.items()}
+            triage = self.role("triage", context, Triage, min(remaining(), settings().triage_timeout))
+            if triage is None:
+                text = " ".join([*(p.label for p in state.active_problems), *(e.text for e in state.available_evidence)])
+                triage = Triage(summary=text[:1800], specialties=fallback_routes(text), routing_reason="主分诊限时备用路由")
+            routes = tuple(dict.fromkeys(s for s in triage.specialties if s in profiles.specialists))
+            context["triage"] = triage.model_dump(mode="json")
+            self.emit("ROUTING_COMPLETED", "triage", {"specialties": routes,
+                "reason": triage.routing_reason, "registry_version": profiles.version})
+            return {"stage": "triage"}
+
+        def retrieve_node(_):
+            self.emit("AGENT_STARTED", "retrieval", {})
+            try:
+                self.bundle = bounded(self.hybrid.retrieve_bundle,
+                    min(remaining(), settings().retrieval_timeout), triage.summary[:3500],
+                    allow_private=self.allow_private, exclude_document_ids=(state.case_ref,), specialties=routes)
+            except Exception as exc:
+                self.warning("retrieval", "retrieval_unavailable", error_type=type(exc).__name__)
+                self.bundle = EvidenceBundle(embedding_model=settings().embedding_model,
+                    limitations=("本轮知识检索未完成，候选方案没有检索证据背书。",))
+            context["retrieved_documents"] = model_documents(self.bundle)
+            self.emit("RETRIEVAL_COMPLETED", "retrieval", {"channels": self.bundle.channels,
+                "public_count": len(self.bundle.public), "historical_count": len(self.bundle.historical),
+                "limitations": self.bundle.limitations, "retrieval_metadata": self.bundle.retrieval_metadata})
+            self.emit("AGENT_COMPLETED", "retrieval", {})
+            return {"stage": "retrieval"}
+
+        def specialty_node(_):
+            end = monotonic() + min(remaining(), settings().specialist_timeout)
+            futures = {}
+            for specialty in routes:
+                self.emit("AGENT_STARTED", specialty, {})
+                self.invoked.append("specialist")
+                profile = registry().specialists[specialty]
+                documents = self.hybrid.select_for_specialty(self.bundle, specialty) if hasattr(self.hybrid, "select_for_specialty") else self.bundle
+                try:
+                    futures[specialty] = submit(self._call, "specialist", {**context,
+                        "specialty": specialty, "task_profile": profile.model_dump(mode="json"),
+                        "retrieved_documents": model_documents(documents, {
+                            e.citation_id: f"K{i + 1}" for i, e in enumerate(self.bundle.items)}), "candidates": [],
+                        "instruction": "按任务维度评估当前证据与缺失信息；candidate_ids 留空；禁止假定检查已完成。"}, SpecialistAdvice)
+                except TimeoutError:
+                    self.warning(specialty, "capacity_exhausted")
+            for specialty, future in futures.items():
+                try:
+                    result = future.result(timeout=max(.001, end - monotonic()))
+                    if result.specialty == specialty:
+                        advice.append(result.model_copy(update={"candidate_ids": (), "evidence_ids": tuple(
+                            ref for ref in result.evidence_ids if ref in {e.evidence_id for e in state.available_evidence})}))
+                    self.emit("AGENT_COMPLETED", specialty, {"advice": result.advice})
+                except Exception as exc:
+                    future.cancel()
+                    self.warning(specialty, "specialist_unavailable", error_type=type(exc).__name__)
+            context["specialist_advice"] = [a.model_dump(mode="json") for a in advice]
+            return {"stage": "specialists"}
+
+        def generate_node(_):
+            nonlocal draft, candidates
+            draft = self.role("action_generator", {**context,
+                "instruction": "必须给出3个不同的下一步候选决策，供医生单选或多选。只使用当前患者证据。candidate_citations 将候选映射到确实支持它的 K 编号，没有支持则为空。不要因规则、资料不全或检索空而拒绝生成；说明不确定性即可。"},
+                DecisionDraft, remaining())
+            unique: list[CandidateAction] = []
+            for candidate in list(draft.candidates if draft else ()):
+                if candidate.action.strip().casefold() not in {a.action.strip().casefold() for a in unique} and candidate.candidate_id not in {a.candidate_id for a in unique}:
+                    unique.append(candidate)
+                if len(unique) == 3:
+                    break
+            for candidate in fallback_candidates(state):
+                if len(unique) == 3:
+                    break
+                if candidate.action.strip().casefold() in {a.action.strip().casefold() for a in unique}:
+                    continue
+                if candidate.candidate_id in {a.candidate_id for a in unique}:
+                    candidate = candidate.model_copy(update={"candidate_id": f"fallback-{uuid4().hex}"})
+                unique.append(candidate)
+            candidates = tuple(unique)
+            self.emit("ACTION_PROPOSED", "action_generator", {"candidate_ids": [a.candidate_id for a in candidates]})
+            return {"stage": "candidates"}
+
+        def audit_node(_):
+            nonlocal candidates, citations
+            documents = {e.citation_id: e for e in self.bundle.items}
+            mapping = expand_citations(GroundedClaims(candidate_citations=draft.candidate_citations if draft else {}), self.bundle)
+            normalized, repairs = self.normalize(state, candidates)
+            sanitized = []
+            for candidate in normalized:
+                findings = list(repairs.get(candidate.candidate_id, ()))
+                findings.extend(self.safety.evaluate(state, candidate).findings)
+                refs = mapping.candidate_citations.get(candidate.candidate_id, ())
+                if set(refs) - documents.keys():
+                    findings.append(SafetyFinding(code="fabricated_citation", explanation="无效知识引用已移除。"))
+                citations[candidate.candidate_id] = tuple(dict.fromkeys(r for r in refs if r in documents))
+                if not citations[candidate.candidate_id]:
+                    findings.append(SafetyFinding(code="insufficient_public_grounding", explanation="本轮未检索到直接支持此候选的公开资料。"))
+                sanitized.append(candidate.model_copy(update={"evidence_ids": tuple(r for r in candidate.evidence_ids if r in {e.evidence_id for e in state.available_evidence})}))
+                assessments.append(SafetyAssessment(candidate_id=candidate.candidate_id, findings=tuple(findings)))
+                for finding in findings:
+                    self.warning("safety_critic", finding.code, candidate_id=candidate.candidate_id,
+                        explanation=finding.explanation, would_veto=finding.veto)
+            candidates = tuple(sanitized)
+            return {"stage": "advisory_audit"}
+
+        builder: StateGraph[ProposalState, None, ProposalState, ProposalState] = StateGraph(ProposalState)
+        nodes = [("triage", triage_node), ("retrieval", retrieve_node),
+                 ("specialists", specialty_node), ("candidates", generate_node), ("advisory_audit", audit_node)]
+        previous = START
+        for name, node in nodes:
+            builder.add_node(name, node)
+            builder.add_edge(previous, name)
+            previous = name
+        builder.add_edge(previous, END)
+        for mode, update in builder.compile().stream(ProposalState(stage="start"), stream_mode=["updates", "custom"]):
+            self.emit("GRAPH_UPDATE", "langgraph", {"stream_mode": mode, "nodes": list(update),
+                "elapsed_ms": round((monotonic() - start) * 1000)})
+        ranked = self.policy.rank(candidates)
+        preferred = next((r.candidate_id for r in ranked if not r.candidate_id.startswith("fallback-")), ranked[0].candidate_id)
+        cited = tuple(dict.fromkeys(r for refs in citations.values() for r in refs))
+        documents = {e.citation_id: e for e in self.bundle.items}
+        roles = tuple(dict.fromkeys(self.invoked))
         return Recommendation(recommendation_id=uuid4().hex, state_fingerprint=state_fingerprint(state),
-            candidates=candidates, selected_candidate_id=selected, rankings=ranked,
-            safety_assessments=tuple(assessments), specialist_advice=tuple(advice),
+            candidates=candidates, selected_candidate_id=preferred,
+            rankings=ranked, safety_assessments=tuple(assessments), specialist_advice=tuple(advice),
             citation_ids=cited, citation_hashes={r: documents[r].content_sha256 for r in cited},
-            candidate_citations=grounding.candidate_citations,
-            inferred_risk_flags=working.risk_flags, proposed_differential=formulation.differential,
-            problem_summaries=formulation.problem_summaries, explanation=arbiter.explanation,
-            uncertainty=tuple(dict.fromkeys((*interpretation.uncertainty, *formulation.uncertainty,
-                *generated.uncertainty, *grounding.limitations, *critique.uncertainty,
-                *arbiter.uncertainty, *self.bundle.limitations))), roles_invoked=roles,
-            prompt_versions={r: self.agents[r].version for r in roles},
+            candidate_citations=citations, proposed_differential=triage.differential,
+            inferred_risk_flags=tuple(dict.fromkeys((*state.risk_flags, *triage.risk_flags))),
+            explanation="三个候选均可由医生选择；自动校验仅记入观察台。",
+            uncertainty=(*triage.uncertainty, *(draft.uncertainty if draft else ()), *self.bundle.limitations),
+            roles_invoked=roles, prompt_versions={r: self.agents[r].version for r in roles},
             prompt_hashes={r: self.agents[r].content_sha256 for r in roles},
-            model_metadata=self.model.metadata.model_dump())
+            model_metadata=self.model.metadata.model_dump(), audit_policy="advisory",
+            elapsed_ms=round((monotonic() - start) * 1000),
+            generation_mode="model" if all(not a.candidate_id.startswith("fallback-") for a in candidates) else "degraded")

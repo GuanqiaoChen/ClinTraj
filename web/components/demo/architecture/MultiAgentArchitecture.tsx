@@ -7,6 +7,7 @@ import { X } from "lucide-react";
 import { ARCHITECTURE_AGENTS, SPECIALTY_LABELS } from "@/lib/demo/architecture";
 import { ARCHITECTURE_VIEW_EDGES, ARCHITECTURE_VIEW_NODES, architectureViewStatus, type ArchitectureViewNode } from "@/lib/demo/architecture-view";
 import type { AgentStatus } from "@/lib/demo/types";
+import { FLOW_LABELS, zh } from "@/lib/ui-zh";
 import { REPLAY_CONFIG } from "@/lib/demo/config";
 import "./architecture.css";
 
@@ -33,7 +34,7 @@ const ArchitectureNode = memo(function ArchitectureNode({ data }: NodeProps<Arch
     <div
       className={`architecture-node architecture-node--${component.kind} architecture-node--${status.toLowerCase()}${inspected ? " architecture-node--inspected" : ""}`}
       role="button" tabIndex={0}
-      aria-label={`${component.title}, ${status.toLowerCase()}. Show details.`} aria-expanded={inspected}
+      aria-label={`${component.title}，${zh(status)}。查看详情。`} aria-expanded={inspected}
       onClick={(event) => { event.stopPropagation(); onInspect(component.id); }}
       onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onInspect(component.id); } }}
     >
@@ -61,9 +62,9 @@ function RoutedEdge({ id, sourceX, sourceY, targetX, targetY, style, markerEnd, 
 const NODE_TYPES = { architecture: ArchitectureNode, zone: StageZone };
 const EDGE_TYPES = { routed: RoutedEdge };
 const ZONES: ZoneFlowNode[] = [
-  { id: 'zone-understand', type: 'zone', position: { x: 12, y: 0 }, data: { label: 'Understand' }, style: { width: 371, height: 315 }, zIndex: -2, selectable: false, draggable: false, focusable: false },
-  { id: 'zone-assess', type: 'zone', position: { x: 398, y: 0 }, data: { label: 'Assess' }, style: { width: 550, height: 315 }, zIndex: -2, selectable: false, draggable: false, focusable: false },
-  { id: 'zone-decide', type: 'zone', position: { x: 963, y: 0 }, data: { label: 'Review & act' }, style: { width: 365, height: 315 }, zIndex: -2, selectable: false, draggable: false, focusable: false },
+  { id: 'zone-understand', type: 'zone', position: { x: 12, y: 0 }, data: { label: '理解' }, style: { width: 371, height: 315 }, zIndex: -2, selectable: false, draggable: false, focusable: false },
+  { id: 'zone-assess', type: 'zone', position: { x: 398, y: 0 }, data: { label: '评估' }, style: { width: 550, height: 315 }, zIndex: -2, selectable: false, draggable: false, focusable: false },
+  { id: 'zone-decide', type: 'zone', position: { x: 963, y: 0 }, data: { label: '审核与执行' }, style: { width: 365, height: 315 }, zIndex: -2, selectable: false, draggable: false, focusable: false },
 ];
 
 function ResponsiveGraph({ activeId }: { activeId?: string }) {
@@ -116,28 +117,28 @@ export function MultiAgentArchitecture({ agentStatuses, specialties, isPlaying, 
   }), [agentStatuses, isPlaying]);
 
   return (
-    <section className="architecture-panel" aria-label="Multi-agent architecture execution" onKeyDown={(event) => { if (event.key === "Escape") setInspectedId(null); }}>
+    <section className="architecture-panel" aria-label="多智能体架构执行过程" onKeyDown={(event) => { if (event.key === "Escape") setInspectedId(null); }}>
       <header className="architecture-panel__header">
-        <h2>Multi-agent reasoning</h2>
+        <h2>多智能体推理</h2>
         {activeAgent && <span className="architecture-panel__active" aria-live="polite">{activeAgent.title}</span>}
       </header>
       <div className="architecture-panel__canvas">
         <ReactFlow<FlowNode>
-          nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
+          nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES} ariaLabelConfig={FLOW_LABELS}
           fitViewOptions={{ padding: { top: "16px", right: "28px", bottom: "70px", left: "28px" }, maxZoom: 1 }} minZoom={0.25} maxZoom={1.8}
           nodesDraggable={false} nodesConnectable={false} elementsSelectable={false}
           onNodeClick={(_, node) => { if (node.type === "architecture") setInspectedId(previous => previous === node.id ? null : node.id); }}
           panOnScroll={false} zoomOnScroll={false} zoomOnPinch preventScrolling={false}
           onPaneClick={() => setInspectedId(null)} attributionPosition="bottom-left"
-          aria-label={`ClinTraj information flow for ${currentStepId || "the current decision"}. Select a role for details.`}
+          aria-label={`ClinTraj 在${currentStepId || "当前决策"}的信息流。选择一个角色查看详情。`}
         >
           <ResponsiveGraph activeId={focusAgent?.id} />
           <Controls showInteractive={false} position="bottom-right" />
         </ReactFlow>
         {inspected && (
           <div className="architecture-panel__detail" role="status">
-            <p><strong>{inspected.title}</strong><span>{inspected.id === 'specialist_pool' && specialties.length > 0 && ["ACTIVE", "COMPLETED", "WARNING"].includes(architectureViewStatus(inspected.members, agentStatuses)) ? `${specialties.map(id => SPECIALTY_LABELS[id] ?? id).join(', ')} contribute advice without transferring ownership.` : inspected.detail}</span></p>
-            <button type="button" aria-label="Close architecture details" onClick={() => setInspectedId(null)}><X size={16} /></button>
+            <p><strong>{inspected.title}</strong><span>{inspected.id === 'specialist_pool' && specialties.length > 0 && ["ACTIVE", "COMPLETED", "WARNING"].includes(architectureViewStatus(inspected.members, agentStatuses)) ? `${specialties.map(id => SPECIALTY_LABELS[id] ?? id).join('、')}提供意见，但不转移主管权。` : inspected.detail}</span></p>
+            <button type="button" aria-label="关闭架构详情" onClick={() => setInspectedId(null)}><X size={16} /></button>
           </div>
         )}
       </div>

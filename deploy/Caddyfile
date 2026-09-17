@@ -1,0 +1,13 @@
+{$PUBLIC_DOMAIN:clintraj.icu} {
+	encode zstd gzip
+	basic_auth {
+		{$CADDY_AUTH_USER} {$CADDY_AUTH_HASH}
+	}
+	reverse_proxy frontend:3000 {
+		flush_interval -1
+	}
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+	}
+}

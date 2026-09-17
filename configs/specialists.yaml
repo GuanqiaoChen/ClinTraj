@@ -1,0 +1,20 @@
+version: "2.0.0"
+specialists:
+  copd:
+    label: 慢阻肺专科
+    description: 气流受限、吸烟及暴露史、肺功能、急性加重与呼吸支持
+    triggers: [慢阻肺, COPD, 气流受限, 肺气肿, spirometry]
+    dimensions: {spirometry: 1.0, oxygenation: 0.9, exacerbation: 0.9, exposure: 0.7, medication: 0.6, imaging: 0.4}
+    relations: [EVALUATED_BY, HAS_PHENOTYPE, RECOMMENDS, CONTRAINDICATED_WITH]
+  oncology:
+    label: 肿瘤专科
+    description: 肿瘤鉴别、病理分型、分期、分子标志物与治疗线次
+    triggers: [癌, 肿瘤, 占位, cancer, tumor, malignancy, neoplasm]
+    dimensions: {pathology: 1.0, staging: 1.0, biomarker: 0.9, treatment_line: 0.8, imaging: 0.7, performance_status: 0.7}
+    relations: [HAS_HISTOLOGY, HAS_STAGE, HAS_BIOMARKER, EVALUATED_BY, RECOMMENDS]
+  pneumonia:
+    label: 肺炎专科
+    description: 结合感染症状、氧合、胸部影像、病原学和严重程度判断；不假定所有患者都必须做 CT
+    triggers: [肺炎, 肺部感染, pneumonia, infiltrate, consolidation]
+    dimensions: {imaging: 1.0, oxygenation: 0.9, microbiology: 0.9, severity: 0.9, symptom: 0.8, medication: 0.5}
+    relations: [HAS_IMAGING_FINDING, HAS_PATHOGEN, EVALUATED_BY, HAS_PHENOTYPE, RECOMMENDS]

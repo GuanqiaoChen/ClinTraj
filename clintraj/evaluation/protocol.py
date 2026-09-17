@@ -33,7 +33,7 @@ class ExperimentConfig(StrictModel):
     model_version: str | None = "1.0.0"
     model_seed: int | None = 0
     temperature: float = 0.0
-    prompt_version: str = "1.0.0"
+    prompt_version: str = "2.0.0"
     research_only: bool = True
 
     def assert_supported(self) -> None:

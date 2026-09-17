@@ -1,6 +1,6 @@
-﻿# ClinTraj — localhost V1
+# ClinTraj — physician-authoritative research workspace
 
-A working physician-facing clinical decision-support workspace: enter observations, run a real model and hybrid knowledge retrieval, review a recommendation, and continue a persistent clinical trajectory. The original research domain, five golden-case checks and `/demo` replay are preserved.
+A physician-facing research workspace: enter observations, receive three candidate decisions, accept one or more or write your own, and continue a persistent trajectory. Internal audits and native LangGraph events appear separately at `/observation`. The original research domain, five golden-case checks and `/demo` replay are preserved.
 
 ## Start
 
@@ -10,11 +10,11 @@ Requires Docker Desktop/Engine with Compose v2.24+, approximately 12 GB availabl
 docker compose up --build
 ```
 
-Open **[http://localhost:3000/workspace](http://localhost:3000/workspace)**. `/` redirects there. [http://localhost:3000/demo](http://localhost:3000/demo) retains the original synthetic trajectory replay.
+Open **[http://localhost:3000/workspace](http://localhost:3000/workspace)** for physician review and **[http://localhost:3000/observation](http://localhost:3000/observation)** for agent traces. `/` redirects there. [http://localhost:3000/demo](http://localhost:3000/demo) retains the original synthetic trajectory replay.
 
 Startup runs Alembic migrations, idempotent knowledge/case seeding, and downloads the configured local Ollama model. The first seed builds actual multilingual embeddings; allow several minutes. The UI becomes available after database seeding. If the local model download is still running, its readiness updates automatically. Startup failures are visible in `docker compose logs init model-init backend`. Subsequent starts reuse named volumes and cached public downloads in `outputs/knowledge/`.
 
-The default model is **local Qwen (`qwen2.5:3b`) through Ollama**, not the deterministic test fixture. All default patient processing and embeddings remain local. The small model can fail structured-output or safety checks; failed proposals stop visibly and can be retried. Use a more capable local model for substantive evaluation.
+The default model is **local Qwen (`qwen2.5:3b`) through Ollama**, not the deterministic test fixture. All default patient processing and embeddings remain local. Incomplete model generation is marked `generation_mode=degraded`, with three explicit fallback choices. Rule findings are advisory and do not veto physician decisions. Use a more capable local model for substantive evaluation.
 
 ### DeepSeek configuration
 
@@ -45,12 +45,12 @@ LOCAL_MODEL_NAME=qwen2.5:7b
 1. Open a session with current patient information and a presenting problem, or load one of five clearly labeled synthetic examples.
 2. Review visible evidence, active problems, risk flags and management ownership.
 3. Click **Run next decision**. Watch actual runtime stages and SSE events.
-4. Review the recommended action, action type/relation, concise clinical rationale, per-candidate citations, safety findings, differential and uncertainty. Expand a source to inspect its version, document/chunk, concept IDs, license and hash.
-5. **Accept**, **Modify** or **Reject**. A modification supports explicit branch/consult/transfer/return parameters and receives fresh independent safety review. A veto is not overridden by acceptance.
+4. Review three candidate actions, concise rationales, citations and specialty advice; inspect rule findings in `/observation`. Expand a source to inspect its version, document/chunk, concept IDs, license and hash.
+5. **Accept one or more**, **Reject all and enter a custom decision**, or **Reject all**. Automatic checks are recorded in `/observation`. Internal rule findings do not veto physician choices.
 6. Add actual new observations or schedule later evidence. **Unlock** advances the observation clock while still enforcing prerequisite events. Continue the next round.
 7. Reload the page or restart the backend: sessions, checkpoints, approvals, graph and trace remain in PostgreSQL.
 
-Accept records a physician-approved action and graph transition. It does not place an EHR order or assert that the clinical action physically occurred. New test results always come from physician/EHR input. Local reviewer names are attribution, not authenticated hospital identities; this V1 is a single-user localhost application.
+Accept records a physician-approved action and graph transition. It does not place an EHR order or assert that the clinical action physically occurred. Real-session results come from physician/EHR input. Explicitly synthetic sessions can automatically generate labeled, provenance-linked model observations after physician choices. Local reviewer names are attribution, not authenticated hospital identities; this V1 is a single-user localhost application.
 
 ## Knowledge and import commands
 
@@ -92,7 +92,7 @@ The MIMIC adapter preserves collection and actual release timestamps (`charttime
 
 The medical relation manifest is a JSON array of `MedicalRelation` objects (schema in `clintraj/server/medical_graph.py`). Each needs typed `head`/`tail` concepts, a relation, `supporting_chunk_id`, an exact `source_excerpt`, `applicability` and `curator`. Ingestion rejects absent/private sources and excerpts missing from the cited chunk. Seed assertions preserve the guideline's qualified wording and recommendation strength; local concept IDs are explicitly namespaced `CLINTRAJ:`.
 
-Public downloads retain the original bytes, source release/version and SHA-256. Reuse the cached files to reproduce a particular import. A new source version creates a new immutable source record. Embeddings use `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (384 dimensions, local ONNX); switching to another 384D encoder requires an explicit `python -m clintraj.server.ingest reindex` during downtime. Different dimensions require a database migration.
+Public downloads retain the original bytes, source release/version and SHA-256. Reuse the cached files to reproduce a particular import. A new source version creates a new immutable source record. The legacy MiniLM 384D index is retained. Migration `0002_research` adds separate BGE-M3 1024D and learned-sparse indexes. Start the `research` Compose profile and run `python -m clintraj.server.reindex_m3`; this build is additive and resumable. Hybrid recall combines lexical, dense, sparse and graph channels, followed by BGE-reranker-v2-m3 and specialty task facets. Unavailable services and incomplete indexes are disclosed in the observation page.
 
 Licensing references: [HPO](https://human-phenotype-ontology.github.io/license.html), [LOINC](https://loinc.org/license), [RxNorm core](https://www.nlm.nih.gov/research/umls/rxnorm/overview.html), and each PMC article's own permissions. No BMJ Best Practice, NICE, SNOMED or unauthorized PhysioNet corpus is fetched.
 
@@ -125,6 +125,13 @@ npm run build
 The default Python suite keeps external-service tests opt-in (`CLINTRAJ_INTEGRATION=1`). They use a deterministic **test-only** model while exercising real Postgres/Neo4j/checkpoints. Real model runs are separately recorded by the HTTP smoke script and browser verification. The golden tests read `SOURCE_WORKBOOK` or the root workbook; if absent, they explicitly skip.
 
 Native development: Python 3.11+, `python -m pip install -r requirements.lock`, `python -m pip install --no-deps -e .`; start Compose database/model services, run `alembic upgrade head`, `python -m clintraj.server.ingest seed`, then `uvicorn clintraj.server.app:app --host 127.0.0.1 --port 8000 --no-access-log`. Run `npm run dev` in `web/`. The default native PostgreSQL port is **55432** to avoid common local conflicts.
+
+## V2 architecture and deployment
+
+- [Clinical schema, specialty ranking, bounded proposals and evaluation design](docs/research-architecture-v2.md)
+- [IONOS / clintraj.icu deployment preparation](docs/deployment.md) — server not yet provisioned; DNS has not been changed
+- `configs/specialists.yaml`: extensible COPD, oncology and pneumonia registry
+- [V2 validation record](docs/v2-verification.md)
 
 ## Implementation map
 

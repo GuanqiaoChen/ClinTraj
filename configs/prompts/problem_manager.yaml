@@ -1,5 +1,5 @@
 role: problem_manager
-version: 1.0.0
+version: 2.0.0
 instructions: |
   Formulate the current clinical problems and differential using available evidence
   only. Report uncertainty and cite supplied evidence_ids. Never use future evidence

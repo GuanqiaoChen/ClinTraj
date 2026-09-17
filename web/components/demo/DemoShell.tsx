@@ -16,18 +16,18 @@ export function DemoShell() {
   const [caseId, setCaseId] = useState(DEMO_CASES[3].caseId);
   const caseData = DEMO_CASES.find(item => item.caseId === caseId) ?? DEMO_CASES[3];
   return <MotionConfig reducedMotion="user">
-    <a href="#main" className="skip-link">Skip to demo</a>
+    <a href="#main" className="skip-link">跳到演示内容</a>
     <header className="site-header">
-      <a href="/demo" className="brand" aria-label="ClinTraj demo">ClinTraj<span>/ Demo</span></a>
-      <a className="docs-link" href={repo + "/blob/main/docs/demo.md"} target="_blank" rel="noreferrer">Documentation ↗</a>
+      <a href="/demo" className="brand" aria-label="ClinTraj 演示">ClinTraj<span>/ 演示</span></a>
+      <a className="docs-link" href={repo + "/blob/main/docs/demo.md"} target="_blank" rel="noreferrer">文档 ↗</a>
     </header>
     <main id="main" className="demo-main">
-      <div className="workspace-heading"><h1>Clinical trajectories</h1><span className="demo-disclosure">Synthetic replay</span></div>
-      <nav className="case-options" aria-label="Select a clinical case">
-        {DEMO_CASES.map((item, index) => <button key={item.caseId} onClick={() => setCaseId(item.caseId)} className={"case-option " + (caseId === item.caseId ? "case-selected" : "")} aria-pressed={caseId === item.caseId} aria-label={`Case ${index + 1}: ${item.title}`}>{item.shortTitle}</button>)}
+      <div className="workspace-heading"><h1>临床决策轨迹</h1><span className="demo-disclosure">合成数据回放</span></div>
+      <nav className="case-options" aria-label="选择一个临床病例">
+        {DEMO_CASES.map((item, index) => <button key={item.caseId} onClick={() => setCaseId(item.caseId)} className={"case-option " + (caseId === item.caseId ? "case-selected" : "")} aria-pressed={caseId === item.caseId} aria-label={`病例 ${index + 1}：${item.title}`}>{item.shortTitle}</button>)}
       </nav>
       <CaseWorkspace key={caseId} caseData={caseData} />
-      <footer className="site-footer"><span>Local fixtures. Simulated physician decisions.</span><a href={repo} target="_blank" rel="noreferrer">GitHub ↗</a></footer>
+      <footer className="site-footer"><span>本地合成数据，医生决策为模拟记录。</span><a href={repo} target="_blank" rel="noreferrer">GitHub ↗</a></footer>
     </main>
   </MotionConfig>;
 }

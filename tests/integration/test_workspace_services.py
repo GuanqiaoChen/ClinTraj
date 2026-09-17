@@ -39,7 +39,7 @@ def model(monkeypatch):
 
 def new_session(client, **kwargs):
     response = client.post("/api/sessions", json={"title": "Automated synthetic session", "problem": "Synthetic concern",
-        "evidence": "Synthetic fever and cough, no results available.", "synthetic": True, **kwargs})
+        "evidence": "Synthetic fever and cough, no results available.", "synthetic": True, "simulate_evidence": False, **kwargs})
     assert response.status_code == 201
     return response.json()
 
@@ -62,7 +62,9 @@ def test_five_golden_cases_ingested_without_rewriting(case_id):
         assert db.scalar(select(KnowledgeChunk).where(KnowledgeChunk.document_id == case_id)) is not None
 
 
-def test_real_hybrid_indexes_provenance_and_private_exclusion():
+def test_real_hybrid_indexes_provenance_and_private_exclusion(monkeypatch):
+    from clintraj.server.config import settings
+    monkeypatch.setattr(settings(), "retrieval_profile", "legacy")
     bundle = HybridRetriever().retrieve_bundle("fever sepsis infection assessment", allow_private=False)
     assert bundle.public and bundle.historical
     assert all(e.corpus in {"public", "synthetic_history"} for e in bundle.items)
@@ -97,7 +99,7 @@ def test_patient_temporal_boundary_and_review_immutability(client, model):
         assert all("chain_of_thought" not in str(e.event) for e in events)
 
 
-def test_modify_independent_review_and_reject_no_graph_change(client, model):
+def test_modify_is_physician_authoritative_and_reject_no_graph_change(client, model):
     sid = new_session(client)["id"]
     run = proposed(client, sid)
     candidate = run["recommendation"]["candidates"][0]
@@ -107,7 +109,7 @@ def test_modify_independent_review_and_reject_no_graph_change(client, model):
         "recommendation_id": run["recommendation"]["recommendation_id"], "response": "MODIFY", "physician_ref": "test",
         "rationale": "Modified after review", "modified_action": candidate})
     assert response.status_code == 200 and response.json()["runs"][0]["status"] == "executed"
-    assert "safety_critic" in model.calls[before:] and "grounding" in model.calls[before:]
+    assert not model.calls[before:]  # No model may veto or delay physician intent.
     count = len(response.json()["state"]["clinical_graph"])
     run = proposed(client, sid)
     result = client.post(f"/api/sessions/{sid}/runs/{run['id']}/decision", json={
@@ -116,16 +118,20 @@ def test_modify_independent_review_and_reject_no_graph_change(client, model):
     assert len(result.json()["state"]["clinical_graph"]) == count
 
 
-def test_independent_safety_veto_cannot_be_accepted(client, model):
+def test_independent_safety_veto_is_observed_but_does_not_block_acceptance(client, model):
     model.responses["safety_critic"] = lambda request: {"assessments": [{"candidate_id": c["candidate_id"],
         "findings": [{"code": "danger", "explanation": "Synthetic independent veto", "veto": True}]} for c in request.payload["candidates"]]}
     sid = new_session(client)["id"]
     run = proposed(client, sid)
-    assert run["recommendation"]["selected_candidate_id"] is None
+    assert run["recommendation"]["selected_candidate_id"] is not None
+    assert len(run["recommendation"]["candidates"]) == 3
     result = client.post(f"/api/sessions/{sid}/runs/{run['id']}/decision", json={
         "recommendation_id": run["recommendation"]["recommendation_id"], "response": "ACCEPT", "physician_ref": "test", "rationale": "Attempted accept"})
-    assert result.json()["runs"][0]["status"] == "blocked"
-    assert len(result.json()["state"]["clinical_graph"]) == 1
+    assert result.json()["runs"][0]["status"] == "executed"
+    assert len(result.json()["state"]["clinical_graph"]) == 2
+    with db_session() as db:
+        warnings = list(db.scalars(select(TraceRecord).where(TraceRecord.run_id == run["id"])))
+        assert any(e.event["data"].get("would_veto") for e in warnings)
 
 
 def test_session_isolation_and_origin_boundary(client, model):
@@ -133,6 +139,36 @@ def test_session_isolation_and_origin_boundary(client, model):
     assert a["state"]["case_ref"] != b["state"]["case_ref"]
     assert a["state"]["available_evidence"][0]["evidence_id"] != b["state"]["available_evidence"][0]["evidence_id"]
     assert client.post("/api/sessions", json={}, headers={"origin": "https://untrusted.example"}).status_code == 403
+
+
+def test_multiple_acceptance_records_each_event_and_synthetic_evidence_once(client, model, monkeypatch):
+    from clintraj.domain.clinical_state import Evidence
+    calls = []
+
+    def simulate(state, actions, run_id):
+        calls.append(actions)
+        return Evidence(evidence_id="sim-" + run_id, text="Synthetic follow-up observation", source="simulated_model",
+            available_at=state.clock, synthetic=True, provenance={"run_id": run_id, "generation_mode": "test"})
+
+    monkeypatch.setattr("clintraj.server.app.simulate", simulate)
+    sid = new_session(client, simulate_evidence=True)["id"]
+    run = proposed(client, sid)
+    rec = run["recommendation"]
+    body = {"recommendation_id": rec["recommendation_id"], "response": "ACCEPT", "physician_ref": "test",
+        "rationale": "Synthetic verification", "selected_candidate_ids": [c["candidate_id"] for c in rec["candidates"]]}
+    url = f"/api/sessions/{sid}/runs/{run['id']}/decision"
+    assert client.post(url, json=body).status_code == 200
+    snapshot = client.get(f"/api/sessions/{sid}").json()
+    assert len(snapshot["state"]["clinical_graph"]) == 4
+    assert len(snapshot["state"]["available_evidence"]) == 2
+    assert snapshot["state"]["available_evidence"][-1]["synthetic"]
+    assert client.post(url, json=body).json()["state"] == snapshot["state"]
+    assert len(calls) == 1 and len(calls[0]) == 3
+    with db_session() as db:
+        traces = list(db.scalars(select(TraceRecord).where(TraceRecord.run_id == run["id"])))
+        assert sum(e.event["type"] == "NODE_FINALIZED" for e in traces) == 3
+    assert client.post("/api/sessions", json={"title": "Test only", "problem": "Test",
+        "evidence": "No actual patient", "synthetic": False, "simulate_evidence": True}).status_code == 422
 
 
 def test_medical_graph_requires_real_source_excerpt():

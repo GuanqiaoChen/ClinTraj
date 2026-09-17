@@ -148,6 +148,9 @@ class Recommendation(Message):
     prompt_versions: dict[str, str] = Field(default_factory=dict)
     prompt_hashes: dict[str, str] = Field(default_factory=dict)
     model_metadata: dict[str, str | int | float | None] = Field(default_factory=dict)
+    generation_mode: str = "model"
+    elapsed_ms: int = 0
+    audit_policy: str = "blocking"
 
     @property
     def selected_action(self) -> CandidateAction | None:
@@ -166,11 +169,16 @@ class PhysicianDecision(Message):
     physician_ref: str = Field(min_length=1)
     rationale: str = Field(min_length=1)
     modified_action: CandidateAction | None = None
+    selected_candidate_ids: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def modification_matches_response(self) -> Self:
         if (self.response == PhysicianResponse.MODIFY) != (self.modified_action is not None):
             raise ValueError("MODIFY requires a modified_action; other responses forbid it")
+        if self.response != PhysicianResponse.ACCEPT and self.selected_candidate_ids:
+            raise ValueError("Only ACCEPT supports candidate selection")
+        if len(self.selected_candidate_ids) != len(set(self.selected_candidate_ids)):
+            raise ValueError("Candidate selection must be unique")
         return self
 
 
@@ -179,3 +187,4 @@ class ReviewOutcome(Message):
     action: CandidateAction | None = None
     reason: str
     safety: SafetyAssessment | None = None
+    actions: tuple[CandidateAction, ...] = ()

@@ -94,7 +94,7 @@ class EmptyRetriever:
         return EvidenceBundle(embedding_model="test")
 
 
-def test_pipeline_rejects_fabricated_citations():
+def test_pipeline_removes_fabricated_citations_without_suppressing_choices():
     from clintraj.domain.clinical_state import ClinicalState, Evidence
     from clintraj.domain.problem_manager import ClinicalProblemManager
 
@@ -102,10 +102,13 @@ def test_pipeline_rejects_fabricated_citations():
     manager = ClinicalProblemManager(state)
     manager.create_problem("P1", "Synthetic problem", "primary_team", clock=0, rationale="test")
     state = manager.into_state(state)
-    model = DeterministicMockAdapter({"grounding": {"candidate_citations": {"reassess-available-evidence": ["invented-source"]}}})
-    coordinator = LiveCoordinator(model, lambda *a: None, allow_private=False, retriever=EmptyRetriever())
-    with pytest.raises(ValueError, match="fabricated"):
-        coordinator.propose(state)
+    model = DeterministicMockAdapter({"action_generator": {"candidates": [{"candidate_id": "A", "action_type": "REASSESS", "action": "复评", "rationale": "测试", "problem_id": "P1"}], "candidate_citations": {"A": ["invented-source"]}}})
+    events = []
+    coordinator = LiveCoordinator(model, lambda *a: events.append(a), allow_private=False, retriever=EmptyRetriever())
+    recommendation = coordinator.propose(state)
+    assert len(recommendation.candidates) == 3
+    assert recommendation.candidate_citations["A"] == ()
+    assert any(e[2].get("code") == "fabricated_citation" for e in events)
 def test_patient_reference_aliases_preserve_text_and_unknown_ids():
     from clintraj.server.pipeline import patient_reference_aliases
 

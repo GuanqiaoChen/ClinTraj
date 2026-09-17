@@ -51,6 +51,7 @@ services:
       LOCAL_MODEL_URL: ${LOCAL_MODEL_URL:-http://ollama:11434/v1}
       SOURCE_WORKBOOK: /source/医生审核版.xlsx
       EMBEDDING_CACHE: /models
+      RETRIEVAL_SERVICE_URL: http://retrieval:8010
     volumes: &backend_volumes
       - embedding_data:/models
       - ./:/source:ro
@@ -80,8 +81,22 @@ services:
     ports: ["127.0.0.1:3000:3000"]
     depends_on:
       backend: {condition: service_healthy}
+  retrieval:
+    profiles: [research]
+    build:
+      context: .
+      dockerfile: deploy/retrieval.Dockerfile
+    environment:
+      HF_HOME: /models/huggingface
+    volumes: [bge_data:/models]
+    ports: ["127.0.0.1:8010:8010"]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8010/health')"]
+      interval: 10s
+      retries: 30
 volumes:
   postgres_data:
   neo4j_data:
   ollama_data:
   embedding_data:
+  bge_data:

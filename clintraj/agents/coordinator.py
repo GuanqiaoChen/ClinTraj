@@ -10,10 +10,11 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from clintraj.agents.base import RoleAgent, StructuredOutputError
-from clintraj.agents.safety import SafetyCritic
+from clintraj.agents.safety import SafetyCritic, normalized_candidate, normalized_candidates
 from clintraj.agents.schemas import (
     ActionGeneration,
     ArbiterExplanation,
+    CandidateAction,
     GroundingAssessment,
     PhysicianDecision,
     PhysicianResponse,
@@ -21,6 +22,7 @@ from clintraj.agents.schemas import (
     Recommendation,
     ReviewOutcome,
     SafetyAssessment,
+    SafetyFinding,
     SafetyReview,
     SpecialistAdvice,
     StateInterpretation,
@@ -84,6 +86,21 @@ class ClinicalCoordinator:
         self.router = router or SpecialistRouter()
         self.safety = SafetyCritic()
 
+    @property
+    def _graph_semantics(self) -> bool:
+        return self.config.dynamic_graph and self.config.graph_semantics
+
+    def normalize(self, state: ClinicalState, candidates: tuple[CandidateAction, ...]
+                  ) -> tuple[tuple[CandidateAction, ...], dict[str, tuple[SafetyFinding, ...]]]:
+        """Correct declared relations before any role, ranking or reviewer sees them.
+
+        Without graph semantics there is nothing to derive a relation from, so the
+        ablation keeps the declared transition and its consequences.
+        """
+        if not self._graph_semantics:
+            return candidates, {}
+        return normalized_candidates(state, candidates)
+
     @staticmethod
     def _validate_evidence(state: ClinicalState, references: tuple[str, ...]) -> None:
         if set(references) - {e.evidence_id for e in state.available_evidence if e.available_at <= state.clock}:
@@ -138,7 +155,7 @@ class ClinicalCoordinator:
             uncertainty.extend(formulation.uncertainty)
             context["formulation"] = formulation.model_dump(mode="json")
         generated = run("action_generator", context, ActionGeneration)
-        candidates = generated.candidates
+        candidates, repairs = self.normalize(working, generated.candidates)
         uncertainty.extend(generated.uncertainty)
         context["candidates"] = [a.model_dump(mode="json") for a in candidates]
         candidate_ids = {a.candidate_id for a in candidates}
@@ -177,9 +194,10 @@ class ClinicalCoordinator:
             citation_hashes = {d.citation_id: d.content_sha256 for d in documents if d.citation_id in citation_ids}
             uncertainty.extend(grounding.limitations)
             context["grounding"] = grounding.model_dump(mode="json")
-        assessments = {a.candidate_id: self.safety.evaluate(working, a,
-            clinical_rules=self.config.safety_critic,
-            graph_validation=self.config.dynamic_graph and self.config.graph_semantics) for a in candidates}
+        assessments = {a.candidate_id: SafetyAssessment(candidate_id=a.candidate_id,
+            findings=repairs.get(a.candidate_id, ()) + self.safety.evaluate(working, a,
+                clinical_rules=self.config.safety_critic,
+                graph_validation=self._graph_semantics).findings) for a in candidates}
         if self.config.multi_agent and self.config.safety_critic and candidates:
             critique = run("safety_critic", context, SafetyReview)
             critic_ids = [a.candidate_id for a in critique.assessments]
@@ -226,8 +244,12 @@ class ClinicalCoordinator:
             return ReviewOutcome(approved=False, reason="No eligible action exists for physician acceptance.")
         review_state = ClinicalState.model_validate(state.model_dump() | {
             "risk_flags": tuple(dict.fromkeys((*state.risk_flags, *recommendation.inferred_risk_flags)))})
+        repairs: tuple[SafetyFinding, ...] = ()
+        if self._graph_semantics:
+            action, repairs = normalized_candidate(review_state, action)
         safety = self.safety.evaluate(review_state, action, clinical_rules=True,
-            graph_validation=self.config.dynamic_graph and self.config.graph_semantics)
+            graph_validation=self._graph_semantics)
+        safety = SafetyAssessment(candidate_id=action.candidate_id, findings=repairs + safety.findings)
         # An ACCEPT cannot erase any independent critic veto. A modified action
         # receives a fresh independent model review before it can execute.
         if decision.response == PhysicianResponse.ACCEPT:

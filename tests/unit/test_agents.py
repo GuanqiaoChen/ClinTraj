@@ -5,11 +5,11 @@ from pydantic import ValidationError
 
 from clintraj.agents.base import StructuredOutputError
 from clintraj.agents.coordinator import ClinicalCoordinator, RuntimeConfig
-from clintraj.agents.safety import SafetyCritic
+from clintraj.agents.safety import SafetyCritic, normalized_candidate
 from clintraj.agents.schemas import CandidateAction, PhysicianDecision, PhysicianResponse
 from clintraj.agents.specialists import SpecialistRouter
 from clintraj.domain.clinical_state import ClinicalState, Evidence
-from clintraj.domain.problem_manager import ClinicalProblemManager
+from clintraj.domain.problem_manager import ClinicalProblemManager, apply_candidate
 from clintraj.models.base import (
     ExternalJSONAdapter,
     ExternalTransmissionDenied,
@@ -175,15 +175,60 @@ def test_single_llm_and_specialist_ablations_change_actual_calls():
     assert "specialist" not in result.roles_invoked
 
 
-def test_start_is_valid_and_invalid_return_is_vetoed_before_review():
+def test_start_is_valid_and_a_misclassified_relation_is_repaired_not_vetoed():
     state = ClinicalState(case_ref="synthetic-empty")
     result = ClinicalCoordinator(DeterministicMockAdapter()).propose(state)
     assert result.selected_action is not None
     assert result.selected_action.relation.value == "START"
     wrong_return = candidate("return", action_type="REASSESS", relation="RETURN", reintegration_target_id="P1")
     safety = SafetyCritic().evaluate(observed_state(), wrong_return)
-    assert safety.vetoed
-    assert "invalid_graph_transition" in {f.code for f in safety.findings}
+    assert not safety.vetoed
+    assert "relation_normalized" in {f.code for f in safety.findings}
+
+
+def test_routine_next_step_under_an_active_problem_is_recorded_as_continue():
+    state = observed_state()
+    mislabelled = candidate("test", action_type="TEST", relation="BRANCH", problem_id="P9",
+                            parent_problem_id="P1", new_problem_label="Presenting concern")
+    repaired, findings = normalized_candidate(state, mislabelled)
+    assert repaired.relation.value == "CONTINUE" and repaired.problem_id == "P1"
+    assert repaired.new_problem_label is None and repaired.parent_problem_id is None
+    assert [f.veto for f in findings] == [False]
+    assert not SafetyCritic().evaluate(state, mislabelled).vetoed
+    assert apply_candidate(state, repaired).clinical_graph[-1].relation.value == "CONTINUE"
+
+
+def test_specific_relations_survive_normalization_when_their_conditions_hold():
+    state = observed_state()
+    for action, expected, extra in [
+        ("CONSULT", "CONSULT", {"specialty": "neurology"}),
+        ("TRANSFER", "TRANSFER", {"specialty": "neurology"}),
+        ("TEST", "BRANCH", {"problem_id": "P2", "parent_problem_id": "P1", "new_problem_label": "Distinct concern"}),
+    ]:
+        proposal = candidate(action.lower(), action_type=action, relation="CONTINUE", **extra)
+        repaired, _ = normalized_candidate(state, proposal)
+        assert repaired.relation.value == expected
+        assert not SafetyCritic().evaluate(state, proposal).vetoed
+    branched = apply_candidate(state, candidate("branch", action_type="REASSESS", relation="BRANCH",
+        problem_id="P2", parent_problem_id="P1", new_problem_label="Distinct concern"))
+    reintegration = candidate("return", action_type="REASSESS", relation="CONTINUE", problem_id="P2",
+                              reintegration_target_id="P1")
+    assert normalized_candidate(branched, reintegration)[0].relation.value == "RETURN"
+
+
+def test_normalization_cannot_rescue_a_transition_the_domain_refuses():
+    state = observed_state()
+    manager = ClinicalProblemManager(state)
+    manager.create_problem("P2", "Second concern", "primary_team", parent_problem_id="P1", clock=1,
+                           rationale="A distinct synthetic problem")
+    ambiguous = manager.into_state(state, clock=1)
+    # An unknown problem cannot be inferred while several problems are active.
+    assert "unknown_problem" in {f.code for f in SafetyCritic().evaluate(
+        ambiguous, candidate("unknown", action_type="TEST", problem_id="P7")).findings}
+    manager.suspend_problem("P1", clock=2, rationale="Synthetic suspension")
+    paused = manager.into_state(ambiguous, clock=2)
+    assert SafetyCritic().evaluate(paused, candidate("paused", action_type="TEST")).vetoed
+    assert SafetyCritic().evaluate(ambiguous, candidate("consult", action_type="CONSULT")).vetoed
 
 
 def test_unknown_candidate_and_incomplete_safety_review_fail_closed():
