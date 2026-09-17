@@ -156,7 +156,7 @@ export function Workspace() {
   }
 
   return <div className="live-workspace"><a href="#patient-workspace" className="skip-link">跳到工作台</a>
-    <header className="site-header"><a href="/workspace" className="brand">ClinTraj<span>临床决策支持</span></a><nav><a href={session ? `/observation?session=${session.id}` : "/observation"}>智能体观察台 ↗</a><a href="/demo">轨迹回放</a></nav></header>
+    <header className="site-header"><a href="/workspace" className="brand">ClinTraj<span>临床决策支持</span></a><nav><a href={session ? `/observation?session=${session.id}` : "/observation"}>智能体观察台 ↗</a><a href="/demo">工作台演示</a></nav></header>
     <main id="patient-workspace" className="ws-main"><div className="ws-heading"><div><h1>医生工作台</h1></div>
       <Button onClick={() => setCreating(!creating)} variant="outline"><Plus size={15} />新建会话</Button></div>
     <div className="ws-session-bar"><label>患者会话<select aria-label="患者会话" value={session?.id ?? ""} onChange={e => openSession(e.target.value)}><option value="" disabled>请选择一个会话</option>{links.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></label>

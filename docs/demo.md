@@ -1,10 +1,31 @@
-# Interactive localhost demo
+# 中文医生工作台演示
 
-The `/demo` page is an independent Next.js frontend in `web/`. It replays authored synthetic clinical scenarios through two synchronized React Flow views: a clinical decision trajectory and the implemented ClinTraj method's component activity. It makes no model, clinical backend, database, LangGraph, retrieval-service, or SSE calls. Next.js serves the page and its local assets; development mode also uses its normal development connection.
+`http://localhost:3000/demo` 现为 **2 分 36 秒的中文慢阻肺医生工作台体验**。它使用当前工作台的患者状态、三候选、医生审核和证据录入布局，按预设时间轴展示两轮完整流程：
+
+1. 输入合成患者的主诉、现病史、查体和未知结果，创建会话。
+2. 展示第一轮生成过程与全部三个候选。
+3. 医生勾选两项方案、填写理由并确认。
+4. 临床时间推进约一小时，输入并提交新的合成血气、影像与观察结果。
+5. 基于已提交证据生成第二轮三候选，医生再次选择并确认。
+6. 展示完成状态，可从头重播或回看章节。
+
+点击 **开始观看**，支持播放/暂停、拖动进度条、七章跳转、0.75×/1×/1.5×/2×倍速和浏览器全屏。空格切换播放，左右箭头前后 5 秒，R 从头重播；键盘焦点位于控件时保留原有操作。切换到后台标签会暂停，返回后可以继续。视频式演示使用中文字幕，没有配音，也不需要下载视频文件。
+
+患者、血气结果、候选与医生操作全部为原创合成脚本。演示没有模型/API/数据库请求，不读写真实工作台会话或浏览器中的患者会话记录；病例声明与证据 provenance 保留在脚本中。新结果在录入提交前只作为输入草稿，不提前进入当前可见证据。医学参考使用公开 NICE 指南，来源可在候选下展开；这不是实际检索结果或临床有效性验证。
+
+实现：`web/components/demo/WorkspaceTour.tsx`、同目录 `workspace-tour.css`、`web/lib/demo/workspace-tour.ts`。时间轴投影为纯函数，任意定位和重播都会从相同时间重建完整状态。测试覆盖时序/来源、多选与三候选保留，以及实际 React 播放控件的暂停、倍速、跳转、末尾和重播；不需要运行 Python/模型。
+
+本次验证：类型检查、ESLint、30 项前端测试与生产构建通过；localhost 演示、原工作台与健康接口通过 HTTP 检查。浏览器自动视觉检查因当前浏览器连接不可用未执行，布局可在本地直接查看。
+
+旧版五病例轨迹图演示保留在 [http://localhost:3000/demo/trajectory](http://localhost:3000/demo/trajectory)，真实工作台仍是 [http://localhost:3000/workspace](http://localhost:3000/workspace)。根路径 `/` 继续进入真实工作台。下文记录旧版轨迹图的操作方式。
+
+## 旧版轨迹图回放
+
+The `/demo/trajectory` page is an independent Next.js frontend in `web/`. It replays authored synthetic clinical scenarios through two synchronized React Flow views: a clinical decision trajectory and the implemented ClinTraj method's component activity. It makes no model, clinical backend, database, LangGraph, retrieval-service, or SSE calls. Next.js serves the page and its local assets; development mode also uses its normal development connection.
 
 ## Run locally
 
-Use Node.js 20.9 or later and npm. From the repository root:
+Use Node.js 22.12 or later and npm (including the jsdom-based player tests). From the repository root:
 
 ```bash
 cd web
@@ -12,7 +33,7 @@ npm ci
 npm run dev
 ```
 
-Open [http://localhost:3000/demo](http://localhost:3000/demo). The server binds to the loopback interface. `/` redirects to `/demo`. No Python environment, source workbook, API key, or model service is required. Stop a foreground server with `Ctrl+C`.
+Open [http://localhost:3000/demo](http://localhost:3000/demo) for the new physician-workspace tour, or [http://localhost:3000/demo/trajectory](http://localhost:3000/demo/trajectory) for the legacy graph replay. The server binds to the loopback interface. `/` redirects to `/workspace`, which additionally needs the backend. Neither replay requires a Python environment, source workbook, API key, or model service. Stop a foreground server with `Ctrl+C`.
 
 For a production build served locally:
 

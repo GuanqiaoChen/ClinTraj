@@ -18,8 +18,8 @@ export function DemoShell() {
   return <MotionConfig reducedMotion="user">
     <a href="#main" className="skip-link">跳到演示内容</a>
     <header className="site-header">
-      <a href="/demo" className="brand" aria-label="ClinTraj 演示">ClinTraj<span>/ 演示</span></a>
-      <a className="docs-link" href={repo + "/blob/main/docs/demo.md"} target="_blank" rel="noreferrer">文档 ↗</a>
+      <a href="/demo/trajectory" className="brand" aria-label="ClinTraj 轨迹回放">ClinTraj<span>/ 轨迹回放</span></a>
+      <a className="docs-link" href="/demo">观看医生工作台演示 ↗</a>
     </header>
     <main id="main" className="demo-main">
       <div className="workspace-heading"><h1>临床决策轨迹</h1><span className="demo-disclosure">合成数据回放</span></div>
