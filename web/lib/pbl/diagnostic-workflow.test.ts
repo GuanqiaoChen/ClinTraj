@@ -78,7 +78,7 @@ describe('synthetic diagnostic workflow', () => {
     const expanded = getWorkflowSnapshot(2);
     expect(expanded.edges.filter((edge) => edge.source === 'obstruction').length).toBeGreaterThan(1);
     expect(expanded.edges.filter((edge) => edge.target === 'chest-ct').length).toBeGreaterThan(1);
-    expect(getWorkflowSnapshot(4).edges.filter((edge) => edge.target === 'respiratory-review')).toHaveLength(2);
+    expect(getWorkflowSnapshot(4).edges.filter((edge) => edge.target === 'respiratory-review').map(edge => edge.source).sort()).toEqual(['cardiac-evidence', 'ct-evidence', 'persistent-obstruction']);
   });
 
   it('dims discontinued hypothesis paths while preserving shared diagnostic evidence', () => {

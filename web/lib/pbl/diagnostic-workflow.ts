@@ -364,6 +364,7 @@ const edgeDefinitions: EdgeDefinition[] = [
   edge('chest-ct', 'ct-evidence', 3, { completeAt: 3 }),
   edge('persistent-obstruction', 'respiratory-review', 4, { completeAt: 5 }),
   edge('ct-evidence', 'respiratory-review', 4, { completeAt: 5 }),
+  edge('cardiac-evidence', 'respiratory-review', 4, { completeAt: 5 }),
   edge('respiratory-review', 'confirmed-diagnosis', 5, { label: '医生确认', completeAt: 5 }),
 ];
 

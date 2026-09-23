@@ -8,7 +8,7 @@ import { DiagnosticWorkflow } from "./DiagnosticWorkflow";
 
 const viewport = vi.hoisted(() => ({ fitView: vi.fn(), zoomIn: vi.fn(), zoomOut: vi.fn() }));
 
-type RenderedNode = { id: string; ariaLabel: string; data: { item: WorkflowNode } };
+type RenderedNode = { id: string; ariaLabel: string; data: { item: WorkflowNode; muted: boolean } };
 type RenderedEdge = { id: string; source: string; target: string; status: string };
 
 // Keep graph geometry outside jsdom while exercising the real controls, fixture,
@@ -21,7 +21,7 @@ vi.mock("@xyflow/react", () => ({
     onNodeClick: (event: unknown, node: RenderedNode) => void;
     children: ReactNode;
   }) => <div data-testid="flow">
-    {nodes.map(node => <button key={node.id} type="button" data-testid="flow-node" data-node-id={node.id} data-kind={node.data.item.kind} data-status={node.data.item.status} aria-label={node.ariaLabel} onClick={event => onNodeClick(event, node)}>
+    {nodes.map(node => <button key={node.id} type="button" data-testid="flow-node" data-node-id={node.id} data-kind={node.data.item.kind} data-status={node.data.item.status} data-muted={node.data.muted} aria-label={node.ariaLabel} onClick={event => onNodeClick(event, node)}>
       <strong>{node.data.item.title}</strong><span>{node.data.item.summary}</span><span>{node.data.item.statusLabel}</span>
     </button>)}
     {edges.map(edge => <span key={edge.id} data-testid="flow-edge" data-source={edge.source} data-target={edge.target} data-status={edge.status} />)}
@@ -29,12 +29,13 @@ vi.mock("@xyflow/react", () => ({
   </div>,
   useReactFlow: () => viewport,
   useStore: (selector: (state: { width: number; height: number; transform: number[] }) => unknown) => selector({ width: 1200, height: 520, transform: [0, 0, 1] }),
+  ViewportPortal: ({ children }: { children: ReactNode }) => children,
   Background: () => null,
-  MiniMap: () => null,
+  MiniMap: ({ ariaLabel }: { ariaLabel: string }) => <div aria-label={ariaLabel} />,
   Handle: () => null,
   BackgroundVariant: { Dots: "dots" },
   MarkerType: { ArrowClosed: "arrowclosed" },
-  Position: { Left: "left", Right: "right" },
+  Position: { Top: "top", Bottom: "bottom" },
 }));
 
 vi.mock("motion/react", () => ({ useReducedMotion: () => true }));
@@ -46,8 +47,8 @@ beforeEach(async () => {
   vi.useFakeTimers();
   vi.clearAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("requestAnimationFrame", vi.fn(() => 1));
-  vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => window.setTimeout(() => callback(0), 0)));
+  vi.stubGlobal("cancelAnimationFrame", vi.fn((id: number) => window.clearTimeout(id)));
   vi.stubGlobal("fetch", vi.fn(() => { throw new Error("The synthetic workflow must not call live session APIs"); }));
   host = document.createElement("div");
   document.body.append(host);
@@ -92,24 +93,56 @@ async function fill(element: HTMLInputElement | HTMLTextAreaElement, value: stri
 }
 
 async function chooseParent(title: string) {
-  const option = [...host.querySelectorAll<HTMLLabelElement>(".pbl-parent-option")].find(label => label.textContent === title);
+  const option = [...host.querySelectorAll<HTMLInputElement>('[data-testid="diagnostic-composer"] input[type="checkbox"]')].find(input => input.getAttribute("aria-label") === title);
   if (!option) throw new Error(`Parent missing: ${title}`);
-  await act(async () => option.querySelector<HTMLInputElement>("input")!.click());
+  await act(async () => option.click());
 }
 
 async function submitNode(title: string) {
-  await fill(host.querySelector<HTMLInputElement>('.pbl-composer input[type="text"]')!, title);
-  await fill(host.querySelector<HTMLTextAreaElement>(".pbl-composer textarea")!, "根据新线索进一步验证");
-  await act(async () => host.querySelector<HTMLFormElement>(".pbl-composer")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  const composer = host.querySelector<HTMLFormElement>('[data-testid="diagnostic-composer"]')!;
+  await fill(composer.querySelector<HTMLInputElement>('input[type="text"]')!, title);
+  await fill(composer.querySelector<HTMLTextAreaElement>("textarea")!, "根据新线索进一步验证");
+  await act(async () => composer.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
 }
 
 function stageIndex() {
-  return [...host.querySelectorAll(".pbl-stage-button")].findIndex(item => item.getAttribute("aria-current") === "step");
+  return [...host.querySelectorAll('[data-testid="diagnostic-stage"]')].findIndex(item => item.getAttribute("aria-current") === "step");
 }
 
 async function advance(ms: number) { await act(async () => vi.advanceTimersByTime(ms)); }
 
 describe("diagnostic workflow interactions", () => {
+  it("switches between the current diagnostic step and complete history, with hypotheses always available for inspection", async () => {
+    expect(button("当前推演").getAttribute("aria-pressed")).toBe("true");
+    expect(button("全部路径").getAttribute("aria-pressed")).toBe("false");
+    expect(node("presentation")).toBeNull();
+    expect(host.querySelectorAll('[aria-label="诊断假设列表"] button[aria-label^="聚焦假设："]')).toHaveLength(3);
+
+    await click("全部路径");
+    expect(button("全部路径").getAttribute("aria-pressed")).toBe("true");
+    expect(node("presentation")).not.toBeNull();
+    expect(host.querySelectorAll('[data-testid="flow-node"]')).toHaveLength(getWorkflowSnapshot(0).nodes.length);
+
+    await goTo(2);
+    const historicalCount = host.querySelectorAll('[data-testid="flow-node"]').length;
+    await click("当前推演");
+    expect(host.querySelectorAll('[data-testid="flow-node"]').length).toBeLessThan(historicalCount);
+    expect(node("obstruction")).not.toBeNull();
+    expect(node("repeat-spirometry")).not.toBeNull();
+    expect(node("bronchiectasis")).not.toBeNull();
+    expect(node("copd")).toBeNull();
+    expect(host.querySelectorAll('[aria-label="诊断假设列表"] button[aria-label^="聚焦假设："]')).toHaveLength(4);
+
+    await click("聚焦假设：慢性阻塞性肺疾病");
+    expect(button("聚焦假设：慢性阻塞性肺疾病").getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelector('[aria-label="节点详情"] h3')?.textContent).toBe("慢性阻塞性肺疾病");
+    expect(node("repeat-spirometry")?.dataset.muted).toBe("false");
+    await click("关闭节点详情");
+    expect(button("聚焦假设：慢性阻塞性肺疾病").getAttribute("aria-pressed")).toBe("false");
+    expect(host.querySelector('[aria-label="节点详情"]')).toBeNull();
+    expect(stageIndex()).toBe(2);
+  });
+
   it("reveals evidence and final confirmation in time, then clears future nodes and inspector details on rollback", async () => {
     expect(stageIndex()).toBe(0);
     expect(button("上一步").disabled).toBe(true);
@@ -120,6 +153,7 @@ describe("diagnostic workflow interactions", () => {
     expect(host.textContent).not.toContain("0.62");
     expect(host.textContent).not.toContain("0.61");
 
+    await click("全部路径");
     await click("下一步");
     expect(stageIndex()).toBe(1);
     expect(node("obstruction")).not.toBeNull();
@@ -153,7 +187,7 @@ describe("diagnostic workflow interactions", () => {
     await goTo(1);
     await click("追加节点");
     expect(host.querySelector('[role="dialog"]')).not.toBeNull();
-    expect([...host.querySelectorAll(".pbl-parent-option")].some(item => item.textContent === "心力衰竭")).toBe(false);
+    expect(host.querySelector('[data-testid="diagnostic-composer"] input[type="checkbox"][aria-label="心力衰竭"]')).toBeNull();
     await chooseParent("慢性阻塞性肺疾病");
     await chooseParent("支气管哮喘");
     await submitNode("补充鉴别假设");
@@ -199,15 +233,15 @@ describe("diagnostic workflow interactions", () => {
     const speed = host.querySelector<HTMLSelectElement>('[aria-label="推演速度"]')!;
     await act(async () => { speed.value = "2"; speed.dispatchEvent(new Event("change", { bubbles: true })); });
     await click("自动推演");
-    await advance(2199);
+    await advance(2499);
     expect(stageIndex()).toBe(0);
     await advance(1);
     expect(stageIndex()).toBe(1);
-    for (let index = 2; index < workflowStages.length; index++) await advance(2200);
+    for (let index = 2; index < workflowStages.length; index++) await advance(2500);
     expect(stageIndex()).toBe(workflowStages.length - 1);
     expect(button("自动推演")).toBeTruthy();
-    expect(host.querySelector(".pbl-status-text")?.textContent).toBe("已完成");
-    await advance(22_000);
+    expect(node("confirmed-diagnosis")?.dataset.status).toBe("confirmed");
+    await advance(25_000);
     expect(stageIndex()).toBe(workflowStages.length - 1);
     await click("重新推演");
     expect(stageIndex()).toBe(0);
@@ -217,15 +251,15 @@ describe("diagnostic workflow interactions", () => {
 
   it("pauses when the panel collapses and retains the same stage after expansion", async () => {
     await click("自动推演");
-    await advance(4400);
+    await advance(5000);
     expect(stageIndex()).toBe(1);
     await click("收起模块");
     expect(host.querySelector('[data-testid="diagnostic-canvas"]')).toBeNull();
-    await advance(44_000);
+    await advance(50_000);
     await click("展开模块");
     expect(stageIndex()).toBe(1);
     expect(button("自动推演")).toBeTruthy();
-    await advance(4400);
+    await advance(5000);
     expect(stageIndex()).toBe(1);
   });
 
@@ -233,23 +267,30 @@ describe("diagnostic workflow interactions", () => {
     await goTo(2);
     await click("缩小画布");
     await click("放大画布");
+    expect(button("跟随进展")).toBeTruthy();
     await click("查看完整工作流");
+    await advance(0);
     expect(viewport.zoomOut).toHaveBeenCalledOnce();
     expect(viewport.zoomIn).toHaveBeenCalledOnce();
     expect(viewport.fitView).toHaveBeenCalledWith(expect.objectContaining({ minZoom: 0.12, maxZoom: 1 }));
-    expect(button("跟随进展").getAttribute("aria-pressed")).toBe("false");
+    expect(button("全部路径").getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelector('button[aria-label="跟随进展"]')).toBeNull();
+    expect(host.querySelector('[aria-label="工作流全局导航"]')).toBeNull();
+    await click("显示缩略图");
+    expect(host.querySelector('[aria-label="工作流全局导航"]')).not.toBeNull();
+    expect(button("显示缩略图").getAttribute("aria-pressed")).toBe("true");
     const panel = host.querySelector<HTMLElement>('[aria-label="动态诊断工作流"]')!;
     await click("增大模块高度");
-    expect(panel.style.getPropertyValue("--pbl-canvas-height")).toBe("600px");
+    expect(panel.style.getPropertyValue("--dw-body-height")).toBe("690px");
     await click("减小模块高度");
-    expect(panel.style.getPropertyValue("--pbl-canvas-height")).toBe("520px");
+    expect(panel.style.getPropertyValue("--dw-body-height")).toBe("600px");
     const previousOverflow = document.body.style.overflow;
     await click("全屏展开");
-    expect(panel.classList.contains("is-expanded")).toBe(true);
+    expect(button("退出全屏")).toBeTruthy();
     expect(document.body.style.overflow).toBe("hidden");
     expect(button("增大模块高度").disabled).toBe(true);
     await click("退出全屏");
-    expect(panel.classList.contains("is-expanded")).toBe(false);
+    expect(button("全屏展开")).toBeTruthy();
     expect(document.body.style.overflow).toBe(previousOverflow);
     expect(stageIndex()).toBe(2);
   });
