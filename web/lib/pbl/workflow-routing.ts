@@ -12,6 +12,27 @@ export interface WorkflowRoute {
   detourX?: number;
 }
 
+/** Round only the planned corners; never add an extra lead-in beyond a lane. */
+export function workflowRoutePath(sx: number, sy: number, tx: number, ty: number, route: WorkflowRoute): string {
+  const exit = Math.max(sy + 10, Math.min(route.centerY, ty - 10));
+  const entry = ty - (18 + route.targetOffset * 30);
+  const points = route.detourX === undefined
+    ? [{ x: sx, y: sy }, { x: sx, y: exit }, { x: tx, y: exit }, { x: tx, y: ty }]
+    : [{ x: sx, y: sy }, { x: sx, y: exit }, { x: route.detourX, y: exit }, { x: route.detourX, y: entry }, { x: tx, y: entry }, { x: tx, y: ty }];
+  let path = `M${sx},${sy}`;
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const previous = points[index - 1], corner = points[index], next = points[index + 1];
+    const before = Math.hypot(corner.x - previous.x, corner.y - previous.y);
+    const after = Math.hypot(next.x - corner.x, next.y - corner.y);
+    if (!before || !after) { path += ` L${corner.x},${corner.y}`; continue; }
+    const radius = Math.min(8, before / 2, after / 2);
+    const from = { x: corner.x - (corner.x - previous.x) / before * radius, y: corner.y - (corner.y - previous.y) / before * radius };
+    const to = { x: corner.x + (next.x - corner.x) / after * radius, y: corner.y + (next.y - corner.y) / after * radius };
+    path += ` L${from.x},${from.y} Q${corner.x},${corner.y} ${to.x},${to.y}`;
+  }
+  return `${path} L${tx},${ty}`;
+}
+
 type Connection = { edge: WorkflowEdge; source: WorkflowNode; target: WorkflowNode };
 
 const compareId = (left: string, right: string) => left < right ? -1 : left > right ? 1 : 0;
@@ -56,6 +77,25 @@ export function planWorkflowRoutes(nodes: WorkflowNode[], edges: WorkflowEdge[])
     group.forEach((connection, index) => {
       routes.get(connection.edge.id)!.targetOffset = portOffset(index, group.length);
     });
+  }
+
+  // Different ports on each card can still share an x coordinate across rows.
+  // Keep arriving stems away from unrelated departing stems in the same gap.
+  const arrivals: { x: number; y: number }[] = [];
+  for (const { edge, source, target } of connections) {
+    const route = routes.get(edge.id)!;
+    const preferred = route.targetOffset;
+    const blocked = (offset: number) => {
+      const x = target.x + offset * VIEW_NODE_WIDTH;
+      return connections.some(other => other.edge.id !== edge.id &&
+        other.source.y < target.y && other.target.y > source.y &&
+        Math.abs(other.source.x + routes.get(other.edge.id)!.sourceOffset * VIEW_NODE_WIDTH - x) < 10) ||
+        arrivals.some(other => other.y === target.y && Math.abs(other.x - x) < 10);
+    };
+    const candidates = [preferred, ...Array.from({ length: 17 }, (_, index) => 0.2 + index * 0.0375)]
+      .sort((left, right) => Math.abs(left - preferred) - Math.abs(right - preferred));
+    route.targetOffset = candidates.find(offset => !blocked(offset)) ?? preferred;
+    arrivals.push({ x: target.x + route.targetOffset * VIEW_NODE_WIDTH, y: target.y });
   }
 
   const usedLanes = new Set<number>();

@@ -1,12 +1,12 @@
 "use client";
 
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
-import { Background, BackgroundVariant, BaseEdge, getSmoothStepPath, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, ViewportPortal, useReactFlow, useStore, useUpdateNodeInternals, type Edge, type EdgeProps, type Node, type NodeProps } from "@xyflow/react";
+import { Background, BackgroundVariant, BaseEdge, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, ViewportPortal, useReactFlow, useStore, useUpdateNodeInternals, type Edge, type EdgeProps, type Node, type NodeProps } from "@xyflow/react";
 import { ArrowDownRight, ArrowRight, Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Crosshair, Expand, FileCheck2, GitBranch, Layers2, Maximize2, Minimize2, Minus, Pause, Play, Plus, RotateCcw, ScanLine, Search, Stethoscope, X } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 import { getWorkflowSnapshot, workflowStages, workflowProvenance, type WorkflowNode, type WorkflowEdge, type WorkflowNodeKind } from "@/lib/pbl/diagnostic-workflow";
 import { buildWorkflowView, getRelatedPathIds, VIEW_NODE_WIDTH, VIEW_NODE_HEIGHT } from "@/lib/pbl/workflow-view";
-import { planWorkflowRoutes, type WorkflowRoute } from "@/lib/pbl/workflow-routing";
+import { planWorkflowRoutes, workflowRoutePath, type WorkflowRoute } from "@/lib/pbl/workflow-routing";
 import { FLOW_LABELS } from "@/lib/ui-zh";
 import { WorkflowInspector } from "./WorkflowInspector";
 import "./diagnostic-workflow.css";
@@ -42,12 +42,7 @@ const DiagnosisNode = memo(function DiagnosisNode({ data }: NodeProps<GraphNode>
 
 function DiagnosisEdge(props: EdgeProps<GraphEdge>) {
   const { sourceX: sx, sourceY: sy, targetX: tx, targetY: ty, data } = props;
-  let [path] = getSmoothStepPath({ sourceX: sx, sourceY: sy, targetX: tx, targetY: ty, sourcePosition: Position.Bottom, targetPosition: Position.Top, borderRadius: 9, centerY: data?.centerY });
-  if (data?.detourX !== undefined) {
-    const lane = data.detourX, exit = data.centerY, entry = ty - (18 + data.targetOffset * 30);
-    const a = Math.sign(lane - sx), b = Math.sign(tx - lane);
-    path = `M${sx},${sy} L${sx},${exit - 8} Q${sx},${exit} ${sx + a * 8},${exit} L${lane - a * 8},${exit} Q${lane},${exit} ${lane},${exit + 8} L${lane},${entry - 8} Q${lane},${entry} ${lane + b * 8},${entry} L${tx - b * 8},${entry} Q${tx},${entry} ${tx},${entry + 8} L${tx},${ty}`;
-  }
+  const path = workflowRoutePath(sx, sy, tx, ty, data!);
   return <g><title>{data?.description}</title><path d={path} fill="none" stroke="#f5f7f8" strokeWidth={7} style={{ pointerEvents: "none", opacity: props.style?.opacity }} /><BaseEdge id={props.id} path={path} markerEnd={props.markerEnd} style={props.style} interactionWidth={18} /></g>;
 }
 const nodeTypes = { diagnosis: DiagnosisNode };
@@ -192,7 +187,7 @@ function WorkflowCanvas() {
         {!following && <div className="dw-canvas-heading"><button className="dw-recenter" aria-label="跟随进展" onClick={() => { setFollowing(true); fit(); }}><Crosshair size={14} />定位当前</button></div>}
         <ReactFlow<GraphNode, GraphEdge> nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} nodesDraggable={false} nodesConnectable={false} edgesFocusable={false} deleteKeyCode={null} minZoom={0.12} maxZoom={1.6} fitView fitViewOptions={{ includeHiddenNodes: true, padding: 0.15, maxZoom: 1 }} onNodeClick={(_, node) => select(node.id)} onPaneClick={() => { setSelectedId(null); setFocusedEdgeId(null); }} onEdgeMouseEnter={(_, edge) => setHoveredEdgeId(edge.id)} onEdgeMouseLeave={() => setHoveredEdgeId(null)} onEdgeClick={(_, edge) => { setFocusedEdgeId(edge.id); setSelectedId(edge.target); setPlayRequested(false); }} onMoveStart={event => { if (event) setFollowing(false); }} ariaLabelConfig={FLOW_LABELS} aria-label="诊断验证画布" preventScrolling={false} onlyRenderVisibleElements>
           <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#dce2e5" />
-          <ViewportPortal>{view.rows.map(row => <div key={row.y} className="dw-row-label" style={{ left: 0, top: row.y - 34, width: Math.max(...view.nodes.map(node => node.x)) + VIEW_NODE_WIDTH }}>{row.label}<span /></div>)}</ViewportPortal>
+          <ViewportPortal>{view.rows.map(row => <div key={row.y} className="dw-row-label" style={{ left: 0, top: row.y - 34 }}>{row.label}</div>)}</ViewportPortal>
           {mapVisible && <MiniMap<GraphNode> pannable zoomable style={{ width: 154, height: 92 }} nodeColor={node => node.data.item.status === "ruled-out" ? "#d2d5d8" : node.data.item.kind === "hypothesis" ? "#bdc8eb" : node.data.item.kind === "evidence" ? "#b9d3c8" : "#a3bed3"} maskColor="rgba(237,241,243,.7)" ariaLabel="工作流全局导航" />}
         </ReactFlow>
         <div className="dw-canvas-bottom"><div className="dw-legend"><span><i className="hypothesis" />假设</span><span><i className="test" />检查</span><span><i className="evidence" />证据</span><span><i className="closed" />已终止</span></div><div className="dw-map-tools"><Tool label="缩小画布" onClick={() => { setFollowing(false); void flow.zoomOut({ duration }); }}><Minus size={15} /></Tool><span>{Math.round(zoom * 100)}%</span><Tool label="放大画布" onClick={() => { setFollowing(false); void flow.zoomIn({ duration }); }}><Plus size={15} /></Tool><i /><Tool label="查看完整工作流" onClick={() => { setMode("all"); setFollowing(true); }}><Expand size={15} /></Tool><Tool label="显示缩略图" pressed={mapVisible} onClick={() => setMapVisible(value => !value)}><Layers2 size={15} /></Tool></div></div>

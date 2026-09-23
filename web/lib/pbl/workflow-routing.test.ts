@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { getWorkflowSnapshot, workflowStages, type WorkflowEdge, type WorkflowNode } from './diagnostic-workflow';
 import { buildWorkflowView, VIEW_NODE_HEIGHT, VIEW_NODE_WIDTH, VIEW_ROW_GAP } from './workflow-view';
-import { planWorkflowRoutes } from './workflow-routing';
+import { planWorkflowRoutes, workflowRoutePath } from './workflow-routing';
 
 const edge = (id: string, source: string, target: string): WorkflowEdge => ({ id, source, target, introducedAt: 0, status: 'active' });
 const node = (id: string, x: number, y: number): WorkflowNode => ({ ...getWorkflowSnapshot(0).nodes[0], id, x, y });
 
 describe('workflow relationship routing', () => {
+  it('rounds an early lane without overshooting and reversing the source stem', () => {
+    const path = workflowRoutePath(219, 138, 134, 244, { sourceOffset: 0.2, targetOffset: 0.5, centerY: 154 });
+    expect(path).toBe('M219,138 L219,146 Q219,154 211,154 L142,154 Q134,154 134,162 L134,244');
+    expect(path).not.toContain('NaN');
+  });
   it('assigns unique ports and horizontal lanes at every stage in both views', () => {
     for (const mode of ['focus', 'all'] as const) {
       for (const stage of workflowStages) {
@@ -20,7 +25,6 @@ describe('workflow relationship routing', () => {
           for (const ports of [outgoing, incoming]) {
             expect(new Set(ports).size).toBe(ports.length);
             expect(ports.every(offset => offset >= 0.2 && offset <= 0.8)).toBe(true);
-            if (ports.length === 1) expect(ports[0]).toBe(0.5);
           }
         }
         for (const connection of view.edges) {
@@ -40,8 +44,7 @@ describe('workflow relationship routing', () => {
     const routes = planWorkflowRoutes(nodes, edges);
     expect(routes.get('left')!.sourceOffset).toBe(0.2);
     expect(routes.get('right')!.sourceOffset).toBe(0.8);
-    expect(routes.get('in-left')!.targetOffset).toBe(0.2);
-    expect(routes.get('in-right')!.targetOffset).toBe(0.8);
+    expect(routes.get('in-left')!.targetOffset).toBeLessThan(routes.get('in-right')!.targetOffset);
   });
 
   it('routes every row-skipping relationship outside all cards on a separate vertical lane', () => {
@@ -70,6 +73,20 @@ describe('workflow relationship routing', () => {
     expect(routes.get('first')!.sourceOffset).not.toBe(routes.get('second')!.sourceOffset);
     expect(routes.get('first')!.targetOffset).not.toBe(routes.get('second')!.targetOffset);
     expect(routes.get('first')!.centerY).not.toBe(routes.get('second')!.centerY);
+  });
+
+  it('keeps arrival stems clear of unrelated departure stems between initial rows', () => {
+    const view = buildWorkflowView({ snapshot: getWorkflowSnapshot(0), mode: 'focus' });
+    const routes = planWorkflowRoutes(view.nodes, view.edges);
+    for (const incoming of view.edges) {
+      const target = view.nodes.find(item => item.id === incoming.target)!;
+      const arrivalX = target.x + routes.get(incoming.id)!.targetOffset * VIEW_NODE_WIDTH;
+      for (const outgoing of view.edges.filter(item => item.id !== incoming.id)) {
+        const source = view.nodes.find(item => item.id === outgoing.source)!;
+        const departureX = source.x + routes.get(outgoing.id)!.sourceOffset * VIEW_NODE_WIDTH;
+        expect(Math.abs(arrivalX - departureX), `${incoming.id} overlaps ${outgoing.id}`).toBeGreaterThanOrEqual(10);
+      }
+    }
   });
 
   it('is deterministic regardless of input order and does not mutate the graph', () => {

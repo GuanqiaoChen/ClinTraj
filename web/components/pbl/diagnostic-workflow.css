@@ -119,7 +119,7 @@
 .dw-burden { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #e1e3e6; border-radius: 4px; padding: 3px 6px; background: #f2f4f7; color: #4f5b67; font-size: 10px; line-height: 1.5; }
 .dw-rail-footer { display: flex; gap: 6px; align-items: center; margin-top: auto; padding: 24px 3px 0; color: #68727e; font-size: 10px; }
 .dw-canvas { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; background: #f5f7fa; }
-.dw-canvas > .react-flow { position: absolute; inset: 0; }
+.dw-canvas > .react-flow { position: absolute; inset: 0; width: 100%; height: 100%; }
 .dw-canvas .react-flow__pane { cursor: grab; }
 .dw-canvas .react-flow__pane:active { cursor: grabbing; }
 .dw-canvas .react-flow__node { cursor: pointer; }
@@ -137,8 +137,7 @@
 .dw-recenter { margin-left: auto; pointer-events: auto; background: #ffffffdb; border: 1px solid #e2e4e7; border-radius: 5px; min-height: 28px; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; color: #4f5b67; font-size: 10px; white-space: nowrap; }
 .dw-recenter:hover { color: #36404b; background: #fff; border-color: #c1c3c6; }
 .dw-recenter[aria-pressed="true"] { color: #4f5b67; background: #f2f4f7; border-color: #d8dadd; }
-.dw-row-label { position: absolute; width: 840px; display: flex; align-items: center; gap: 16px; color: #627078; font-size: 11px; font-weight: 600; line-height: 1.5; letter-spacing: 1.4px; white-space: nowrap; pointer-events: none; }
-.dw-row-label > span { flex: 1; height: 1px; background: #dadcdf; }
+.dw-row-label { position: absolute; color: #627078; font-size: 11px; font-weight: 600; line-height: 1.5; letter-spacing: 1.4px; white-space: nowrap; pointer-events: none; }
 .dw-node { position: relative; display: flex; flex-direction: column; width: 268px; height: 136px; padding: 15px 16px 13px; border: 1px solid #c4c6c9; border-radius: 7px; background: #fff; color: #343639; box-shadow: 0 2px 3px #34363905; transition: box-shadow .18s, opacity .18s, border-color .18s; }
 .dw-node:hover { box-shadow: 0 5px 18px -9px #37393c40; }
 .dw-node h3 { overflow: hidden; margin: 9px 0 5px; color: inherit; font-size: 16px; font-weight: 550; line-height: 1.45; letter-spacing: -.2px; text-overflow: ellipsis; white-space: nowrap; }
