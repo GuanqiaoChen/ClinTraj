@@ -25,7 +25,7 @@ describe('diagnostic workflow views', () => {
   it('starts with hypotheses above their shared checks in two rows', () => {
     const view = buildWorkflowView({ snapshot: getWorkflowSnapshot(0), mode: 'focus' });
     expect(ids(view.nodes)).toEqual(['copd', 'asthma', 'heart-failure', 'spirometry', 'baseline-tests', 'cardiac-tests']);
-    expect(view.rows).toEqual([{ y: 0, label: '诊断假设' }, { y: 246, label: '优先验证' }]);
+    expect(view.rows).toEqual([{ y: 0, label: '假设' }, { y: 246, label: '检查' }]);
     expect(view.nodes.find(node => node.id === 'cardiac-tests')).toMatchObject({ x: 660, y: 246 });
     expect(view.edges.filter(item => item.target === 'spirometry').map(item => item.source)).toEqual(['copd', 'asthma']);
     expect(view.edges.filter(item => item.target === 'baseline-tests')).toHaveLength(3);

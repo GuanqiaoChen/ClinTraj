@@ -9,7 +9,7 @@ import { DiagnosticWorkflow } from "./DiagnosticWorkflow";
 const viewport = vi.hoisted(() => ({ fitView: vi.fn(), zoomIn: vi.fn(), zoomOut: vi.fn() }));
 
 type RenderedNode = { id: string; ariaLabel: string; data: { item: WorkflowNode; muted: boolean } };
-type RenderedEdge = { id: string; source: string; target: string; status: string };
+type RenderedEdge = { id: string; source: string; target: string; status: string; sourceHandle: string; targetHandle: string };
 
 // Keep graph geometry outside jsdom while exercising the real controls, fixture,
 // inspector, composer, and the nodes/edges passed across the graph boundary.
@@ -24,7 +24,7 @@ vi.mock("@xyflow/react", () => ({
     {nodes.map(node => <button key={node.id} type="button" data-testid="flow-node" data-node-id={node.id} data-kind={node.data.item.kind} data-status={node.data.item.status} data-muted={node.data.muted} aria-label={node.ariaLabel} onClick={event => onNodeClick(event, node)}>
       <strong>{node.data.item.title}</strong><span>{node.data.item.summary}</span><span>{node.data.item.statusLabel}</span>
     </button>)}
-    {edges.map(edge => <span key={edge.id} data-testid="flow-edge" data-source={edge.source} data-target={edge.target} data-status={edge.status} />)}
+    {edges.map(edge => <span key={edge.id} data-testid="flow-edge" data-source={edge.source} data-target={edge.target} data-status={edge.status} data-source-handle={edge.sourceHandle} data-target-handle={edge.targetHandle} />)}
     {children}
   </div>,
   useReactFlow: () => viewport,
@@ -112,7 +112,25 @@ function stageIndex() {
 async function advance(ms: number) { await act(async () => vi.advanceTimersByTime(ms)); }
 
 describe("diagnostic workflow interactions", () => {
+  it("assigns separate ports to branching hypotheses and shared checks", () => {
+    const branching = [...host.querySelectorAll<HTMLElement>('[data-testid="flow-edge"][data-source="copd"]')];
+    const shared = [...host.querySelectorAll<HTMLElement>('[data-testid="flow-edge"][data-target="baseline-tests"]')];
+    expect(branching).toHaveLength(2);
+    expect(shared).toHaveLength(3);
+    expect(branching.every(edge => edge.dataset.sourceHandle)).toBe(true);
+    expect(shared.every(edge => edge.dataset.targetHandle)).toBe(true);
+    expect(new Set(branching.map(edge => edge.dataset.sourceHandle)).size).toBe(branching.length);
+    expect(new Set(shared.map(edge => edge.dataset.targetHandle)).size).toBe(shared.length);
+  });
+
   it("switches between the current diagnostic step and complete history, with hypotheses always available for inspection", async () => {
+    const canvas = host.querySelector('[data-testid="diagnostic-canvas"]')!;
+    const detailDock = host.querySelector('[data-testid="diagnostic-detail-dock"]')!;
+    expect(detailDock).not.toBeNull();
+    expect(canvas.parentElement).toBe(detailDock.parentElement);
+    expect(detailDock.querySelector('[aria-label="节点详情"]')).toBeNull();
+    expect(host.textContent).not.toMatch(/进行中|\d+ 个节点|\d+ 条连接/);
+    expect(host.querySelector('[aria-label="推演阶段"]')?.textContent).not.toMatch(/首轮|收敛/);
     expect(button("当前推演").getAttribute("aria-pressed")).toBe("true");
     expect(button("全部路径").getAttribute("aria-pressed")).toBe("false");
     expect(node("presentation")).toBeNull();
@@ -136,10 +154,13 @@ describe("diagnostic workflow interactions", () => {
     await click("聚焦假设：慢性阻塞性肺疾病");
     expect(button("聚焦假设：慢性阻塞性肺疾病").getAttribute("aria-pressed")).toBe("true");
     expect(host.querySelector('[aria-label="节点详情"] h3')?.textContent).toBe("慢性阻塞性肺疾病");
+    expect(detailDock.querySelector('[aria-label="节点详情"]')).not.toBeNull();
+    expect(canvas.querySelector('[aria-label="节点详情"]')).toBeNull();
     expect(node("repeat-spirometry")?.dataset.muted).toBe("false");
     await click("关闭节点详情");
     expect(button("聚焦假设：慢性阻塞性肺疾病").getAttribute("aria-pressed")).toBe("false");
     expect(host.querySelector('[aria-label="节点详情"]')).toBeNull();
+    expect(host.querySelector('[data-testid="diagnostic-detail-dock"]')).toBe(detailDock);
     expect(stageIndex()).toBe(2);
   });
 
@@ -198,7 +219,7 @@ describe("diagnostic workflow interactions", () => {
     expect(host.querySelector('[aria-label="节点详情"]')?.textContent).toContain("未执行检查或生成检查结果");
 
     await click("从此节点继续");
-    await click("检查决策");
+    await click("检查");
     await chooseParent("慢性阻塞性肺疾病");
     await submitNode("共享验证检查");
     expect(node("manual-2")?.dataset.kind).toBe("test");

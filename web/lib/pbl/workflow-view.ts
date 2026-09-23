@@ -38,14 +38,14 @@ const focusLayouts: FocusLayout[] = [
       copd: at(0, 0), asthma: at(0, 1), 'heart-failure': at(0, 2),
       spirometry: at(1, 0), 'baseline-tests': at(1, 1), 'cardiac-tests': at(1, 2),
     },
-    labels: ['诊断假设', '优先验证'],
+    labels: ['假设', '检查'],
   },
   {
     nodes: {
       spirometry: at(0, 0), 'baseline-tests': at(0, 1), 'cardiac-tests': at(0, 2),
       obstruction: at(1, 0), 'sputum-history': at(1, 1), 'cardiac-evidence': at(1, 2),
     },
-    labels: ['已完成检查', '新增证据'],
+    labels: ['检查', '证据'],
   },
   {
     nodes: {
@@ -53,25 +53,25 @@ const focusLayouts: FocusLayout[] = [
       'repeat-spirometry': at(1, 0), 'peak-flow': at(1, 1), bronchiectasis: at(1, 2),
       'chest-ct': at(2, 2),
     },
-    labels: ['已有证据', '扩展验证', '定向检查'],
+    labels: ['证据', '检查 · 假设', '检查'],
   },
   {
     nodes: {
       'repeat-spirometry': at(0, 0), 'peak-flow': at(0, 1), 'chest-ct': at(0, 2),
       'persistent-obstruction': at(1, 0.5), 'ct-evidence': at(1, 2),
     },
-    labels: ['追加检查', '汇合证据'],
+    labels: ['检查', '证据'],
   },
   {
     nodes: {
       'persistent-obstruction': at(0, 0), 'ct-evidence': at(0, 1), 'cardiac-evidence': at(0, 2),
       'respiratory-review': at(1, 1),
     },
-    labels: ['关键证据', '专科复核'],
+    labels: ['证据', '检查'],
   },
   {
     nodes: { 'respiratory-review': at(0, 0), 'confirmed-diagnosis': at(1, 0) },
-    labels: ['医生复核', '诊断确认'],
+    labels: ['检查', '假设'],
   },
 ];
 
@@ -115,7 +115,7 @@ function availablePosition(position: Position, nodes: WorkflowNode[]): Position 
   return result;
 }
 
-const overviewLabels = ['初始证据', '诊断假设', '首轮检查', '首轮证据', '扩展验证', '定向检查', '汇合证据', '专科复核', '诊断确认'];
+const overviewLabels = ['证据', '假设', '检查', '证据', '检查 · 假设', '检查', '证据', '检查', '假设'];
 
 /** Derive display positions only; clinical statuses and evidence stay untouched. */
 export function buildWorkflowView({ snapshot, additions, mode, branchId }: WorkflowViewOptions): WorkflowView {
@@ -167,8 +167,8 @@ export function buildWorkflowView({ snapshot, additions, mode, branchId }: Workf
   const rows = [...new Set(visibleNodes.map(node => node.y))].sort((top, bottom) => top - bottom).map(y => ({
     y,
     label: mode === 'focus'
-      ? layout.labels[Math.round(y / VIEW_ROW_GAP)] ?? '追加验证'
-      : overviewLabels[Math.round(y / VIEW_ROW_GAP)] ?? '追加验证',
+      ? layout.labels[Math.round(y / VIEW_ROW_GAP)] ?? '检查'
+      : overviewLabels[Math.round(y / VIEW_ROW_GAP)] ?? '检查',
   }));
   return { nodes: visibleNodes, edges, rows, relatedNodeIds };
 }

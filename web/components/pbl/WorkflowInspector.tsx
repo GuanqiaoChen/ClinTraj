@@ -8,11 +8,11 @@ import {
 } from "@/lib/pbl/diagnostic-workflow";
 
 const kindLabels: Record<WorkflowNode["kind"], string> = {
-  hypothesis: "诊断假设",
-  test: "检查决策",
-  evidence: "医学证据",
-  consultation: "专科会诊",
-  conclusion: "诊断确认",
+  hypothesis: "假设",
+  test: "检查",
+  evidence: "证据",
+  consultation: "检查",
+  conclusion: "假设",
 };
 
 interface WorkflowInspectorProps {
