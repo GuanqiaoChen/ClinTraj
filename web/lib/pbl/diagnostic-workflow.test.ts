@@ -10,10 +10,11 @@ import {
 describe('synthetic diagnostic workflow', () => {
   it('starts with three unconfirmed hypotheses and genuinely shared checks', () => {
     const initial = getWorkflowSnapshot(0);
-    expect(initial.nodes.filter((node) => node.kind === 'hypothesis').map((node) => node.id)).toEqual(['copd', 'asthma', 'heart-failure']);
+    expect(initial.nodes.filter((node) => node.kind === 'hypothesis')).toHaveLength(10);
+    expect(initial.nodes.map((node) => node.id)).toEqual(expect.arrayContaining(['copd', 'asthma', 'heart-failure', 'reflux-aspiration', 'vascular', 'infection-neoplasm', 'metabolic']));
     expect(initial.nodes.some((node) => node.status === 'confirmed')).toBe(false);
     expect(initial.edges.filter((edge) => edge.target === 'spirometry').map((edge) => edge.source)).toEqual(['copd', 'asthma']);
-    expect(initial.edges.filter((edge) => edge.target === 'baseline-tests')).toHaveLength(3);
+    expect(initial.edges.filter((edge) => edge.target === 'baseline-tests')).toHaveLength(10);
     expect(initial.nodes.find((node) => node.id === 'spirometry')?.status).toBe('active');
   });
 
@@ -78,7 +79,7 @@ describe('synthetic diagnostic workflow', () => {
     const expanded = getWorkflowSnapshot(2);
     expect(expanded.edges.filter((edge) => edge.source === 'obstruction').length).toBeGreaterThan(1);
     expect(expanded.edges.filter((edge) => edge.target === 'chest-ct').length).toBeGreaterThan(1);
-    expect(getWorkflowSnapshot(4).edges.filter((edge) => edge.target === 'respiratory-review').map(edge => edge.source).sort()).toEqual(['cardiac-evidence', 'ct-evidence', 'persistent-obstruction']);
+    expect(getWorkflowSnapshot(4).edges.filter((edge) => edge.target === 'respiratory-review').map(edge => edge.source).sort()).toEqual(['cardiac-evidence', 'ct-evidence', 'persistent-obstruction', 'red-flag-review', 'reflux-evidence']);
   });
 
   it('dims discontinued hypothesis paths while preserving shared diagnostic evidence', () => {
@@ -115,7 +116,7 @@ describe('synthetic diagnostic workflow', () => {
       expect(node.provenance.sessionKind).toBe('synthetic-research');
       if (node.id !== 'presentation') expect(node.provenance.evidenceIds.length).toBeGreaterThan(0);
     }
-    expect(workflowSources.every((source) => /https:\/\/(goldcopd\.org|www\.nice\.org\.uk)\//.test(source.url))).toBe(true);
+    expect(workflowSources.every((source) => /https:\/\/(goldcopd\.org|www\.nice\.org\.uk|www\.brit-thoracic\.org\.uk)\//.test(source.url))).toBe(true);
   });
 
   it('normalizes invalid replay positions without exposing future data', () => {
@@ -124,5 +125,32 @@ describe('synthetic diagnostic workflow', () => {
     expect(getWorkflowSnapshot(Infinity).stage.index).toBe(0);
     expect(getWorkflowSnapshot(2.9).stage.index).toBe(2);
     expect(getWorkflowSnapshot(100).stage.index).toBe(5);
+  });
+
+  it('revisits ten etiologic categories after evidence and retains uncertain comorbidities', () => {
+    for (const stage of workflowStages) {
+      const snapshot = getWorkflowSnapshot(stage.index);
+      expect(snapshot.vindicatedReview.map(row => row.letter).join('')).toBe('VINDICATED');
+      expect(new Set(snapshot.vindicatedReview.map(row => row.id)).size).toBe(10);
+      for (const row of snapshot.vindicatedReview) {
+        expect(row.assessment.length).toBeGreaterThan(0);
+        expect(row.nextStep.length).toBeGreaterThan(0);
+        for (const id of row.nodeIds) expect(snapshot.nodes.some(node => node.id === id)).toBe(true);
+      }
+    }
+    const initial = getWorkflowSnapshot(0);
+    const first = getWorkflowSnapshot(1);
+    const followUp = getWorkflowSnapshot(3);
+    for (let index = 0; index < 10; index++) {
+      expect(first.vindicatedReview[index].nextStep).not.toBe(initial.vindicatedReview[index].nextStep);
+      expect(followUp.vindicatedReview[index].nextStep).not.toBe(first.vindicatedReview[index].nextStep);
+    }
+    expect(JSON.stringify(initial)).not.toContain('PBL-GI-HX-01');
+    expect(JSON.stringify(first)).not.toContain('PBL-GI-OBS-01');
+    expect(JSON.stringify(initial.vindicatedReview)).not.toContain('0.62');
+    expect(getWorkflowSnapshot(5).nodes.find(node => node.id === 'reflux-aspiration')?.statusLabel).toBe('可能共病');
+    expect(getWorkflowSnapshot(5).nodes.find(node => node.id === 'metabolic')?.status).toBe('candidate');
+    first.vindicatedReview[0].nodeIds.push('future');
+    expect(getWorkflowSnapshot(1).vindicatedReview[0].nodeIds).not.toContain('future');
   });
 });

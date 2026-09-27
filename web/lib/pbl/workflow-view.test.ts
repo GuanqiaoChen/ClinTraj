@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getWorkflowSnapshot, workflowStages, type WorkflowEdge, type WorkflowNode } from './diagnostic-workflow';
-import { buildWorkflowView, getRelatedPathIds, VIEW_NODE_HEIGHT, VIEW_NODE_WIDTH } from './workflow-view';
+import { buildWorkflowView, getDefaultWorkflowNodeId, getRelatedPathIds, getWorkflowReadingOrder, VIEW_NODE_HEIGHT, VIEW_NODE_WIDTH } from './workflow-view';
 
 const ids = (nodes: WorkflowNode[]) => nodes.map(node => node.id);
 const edge = (source: string, target: string, introducedAt = 0): WorkflowEdge => ({
@@ -22,13 +22,37 @@ function expectNoOverlap(nodes: WorkflowNode[]) {
 }
 
 describe('diagnostic workflow views', () => {
-  it('starts with hypotheses above their shared checks in two rows', () => {
+  it('reads visible cards top to bottom, then left to right, with a stable tie break', () => {
+    const nodes = [
+      { ...manualNode('last'), x: 0, y: 246 },
+      { ...manualNode('right'), x: 660, y: 0 },
+      { ...manualNode('b'), x: 0, y: 0 },
+      { ...manualNode('a'), x: 0, y: 0 },
+    ];
+    const original = structuredClone(nodes);
+    expect(ids(getWorkflowReadingOrder(nodes))).toEqual(['a', 'b', 'right', 'last']);
+    expect(ids(getWorkflowReadingOrder([...nodes].reverse()))).toEqual(['a', 'b', 'right', 'last']);
+    expect(getDefaultWorkflowNodeId({ nodes })).toBe('a');
+    expect(getDefaultWorkflowNodeId({ nodes: [] })).toBeNull();
+    expect(nodes).toEqual(original);
+  });
+
+  it('keeps the complete initial differential visible above its shared checks', () => {
     const view = buildWorkflowView({ snapshot: getWorkflowSnapshot(0), mode: 'focus' });
-    expect(ids(view.nodes)).toEqual(['copd', 'asthma', 'heart-failure', 'spirometry', 'baseline-tests', 'cardiac-tests']);
-    expect(view.rows).toEqual([{ y: 0, label: '假设' }, { y: 246, label: '检查' }]);
-    expect(view.nodes.find(node => node.id === 'cardiac-tests')).toMatchObject({ x: 660, y: 246 });
+    expect(ids(getWorkflowReadingOrder(view.nodes))).toEqual([
+      'copd', 'asthma', 'heart-failure', 'reflux-aspiration', 'vascular',
+      'infection-neoplasm', 'deficiency-congenital', 'immune-inflammatory', 'toxic-iatrogenic', 'metabolic',
+      'spirometry', 'baseline-tests', 'cardiac-tests',
+    ]);
+    expect(view.rows).toEqual([
+      { y: 0, label: '诊断假设' },
+      { y: 246, label: 'VINDICATED 鉴别' },
+      { y: 492, label: '共享检查' },
+    ]);
+    expect(view.nodes.find(node => node.id === 'cardiac-tests')).toMatchObject({ x: 1320, y: 492 });
     expect(view.edges.filter(item => item.target === 'spirometry').map(item => item.source)).toEqual(['copd', 'asthma']);
-    expect(view.edges.filter(item => item.target === 'baseline-tests')).toHaveLength(3);
+    expect(view.edges.filter(item => item.target === 'baseline-tests')).toHaveLength(10);
+    expect(getDefaultWorkflowNodeId(view)).toBe('copd');
   });
 
   it('presents the current evidence, expansion, convergence and final review without future findings', () => {
@@ -46,11 +70,27 @@ describe('diagnostic workflow views', () => {
     }
     const expand = buildWorkflowView({ snapshot: getWorkflowSnapshot(2), mode: 'focus' });
     expect(ids(expand.nodes)).toContain('bronchiectasis');
+    expect(ids(expand.nodes)).toEqual(expect.arrayContaining(['reflux-history', 'red-flag-review', 'reflux-review']));
+    expect(expand.edges.some(item => item.source === 'reflux-history' && item.target === 'reflux-review')).toBe(true);
     expect(expand.edges.filter(item => item.target === 'chest-ct')).toHaveLength(2);
     const converge = buildWorkflowView({ snapshot: getWorkflowSnapshot(3), mode: 'focus' });
+    expect(ids(converge.nodes)).toEqual(expect.arrayContaining(['reflux-review', 'reflux-evidence']));
     expect(converge.edges.filter(item => item.target === 'persistent-obstruction')).toHaveLength(2);
+    const review = buildWorkflowView({ snapshot: getWorkflowSnapshot(4), mode: 'focus' });
+    expect(ids(review.nodes)).toEqual(expect.arrayContaining(['cardiac-evidence', 'reflux-evidence', 'red-flag-review', 'respiratory-review']));
+    expect(review.edges.some(item => item.source === 'reflux-evidence' && item.target === 'respiratory-review')).toBe(true);
     const final = buildWorkflowView({ snapshot: getWorkflowSnapshot(5), mode: 'focus' });
     expect(ids(final.nodes)).toEqual(['respiratory-review', 'confirmed-diagnosis']);
+  });
+
+  it('defaults each step to its first visible card and limits navigation to the filtered branch', () => {
+    const defaults = workflowStages.map(stage => getDefaultWorkflowNodeId(
+      buildWorkflowView({ snapshot: getWorkflowSnapshot(stage.index), mode: 'focus' }),
+    ));
+    expect(defaults).toEqual(['copd', 'spirometry', 'obstruction', 'repeat-spirometry', 'persistent-obstruction', 'respiratory-review']);
+    const branch = buildWorkflowView({ snapshot: getWorkflowSnapshot(0), mode: 'focus', branchId: 'heart-failure' });
+    expect(ids(getWorkflowReadingOrder(branch.nodes))).toEqual(['heart-failure', 'baseline-tests', 'cardiac-tests']);
+    expect(getDefaultWorkflowNodeId(branch)).toBe('heart-failure');
   });
 
   it('keeps cards apart in both views and retains a stable full-graph map during replay', () => {

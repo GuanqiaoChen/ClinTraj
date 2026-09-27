@@ -5,10 +5,11 @@ import { Background, BackgroundVariant, BaseEdge, Handle, MarkerType, MiniMap, P
 import { ArrowDownRight, ArrowRight, Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Crosshair, Expand, FileCheck2, GitBranch, Layers2, Maximize2, Minimize2, Minus, Pause, Play, Plus, RotateCcw, ScanLine, Search, Stethoscope, X } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 import { getWorkflowSnapshot, workflowStages, workflowProvenance, type WorkflowNode, type WorkflowEdge, type WorkflowNodeKind } from "@/lib/pbl/diagnostic-workflow";
-import { buildWorkflowView, getRelatedPathIds, VIEW_NODE_WIDTH, VIEW_NODE_HEIGHT } from "@/lib/pbl/workflow-view";
+import { buildWorkflowView, getDefaultWorkflowNodeId, getWorkflowReadingOrder, getRelatedPathIds, VIEW_NODE_WIDTH, VIEW_NODE_HEIGHT } from "@/lib/pbl/workflow-view";
 import { planWorkflowRoutes, workflowRoutePath, type WorkflowRoute } from "@/lib/pbl/workflow-routing";
 import { FLOW_LABELS } from "@/lib/ui-zh";
 import { WorkflowInspector } from "./WorkflowInspector";
+import { VindicatedReview } from "./VindicatedReview";
 import "./diagnostic-workflow.css";
 
 type Addition = { node: WorkflowNode; edges: WorkflowEdge[] };
@@ -86,7 +87,7 @@ function WorkflowCanvas() {
   const [playRequested, setPlayRequested] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [mode, setMode] = useState<"focus" | "all">("focus");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [manualSelectionId, setSelectedId] = useState<string | null>(null);
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
   const [focusedEdgeId, setFocusedEdgeId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -111,8 +112,12 @@ function WorkflowCanvas() {
   const allNodes = useMemo(() => [...snapshot.nodes, ...local.map(item => item.node)], [snapshot.nodes, local]);
   const allEdges = useMemo(() => [...snapshot.edges, ...local.flatMap(item => item.edges)].map(edge => allNodes.find(node => node.id === edge.source)?.status === "ruled-out" ? { ...edge, status: "ruled-out" as const } : edge), [snapshot.edges, local, allNodes]);
   const view = useMemo(() => buildWorkflowView({ snapshot, additions: { nodes: local.map(item => item.node), edges: allEdges.filter(edge => edge.target.startsWith("manual-")) }, mode }), [snapshot, local, allEdges, mode]);
+  const readingOrder = useMemo(() => getWorkflowReadingOrder(view.nodes), [view.nodes]);
+  const selectedId = allNodes.some(node => node.id === manualSelectionId) ? manualSelectionId : getDefaultWorkflowNodeId(view);
   const selected = allNodes.find(node => node.id === selectedId);
-  const relatedIds = useMemo(() => selectedId ? getRelatedPathIds(allEdges, selectedId) : null, [allEdges, selectedId]);
+  const selectedIndex = readingOrder.findIndex(node => node.id === selectedId);
+  // Automatic details should not dim the other hypotheses before the reader explores them.
+  const relatedIds = useMemo(() => manualSelectionId ? getRelatedPathIds(allEdges, manualSelectionId) : null, [allEdges, manualSelectionId]);
   const activeEdgeId = hoveredEdgeId || focusedEdgeId;
   const activeEdge = view.edges.find(edge => edge.id === activeEdgeId);
   const routes = useMemo(() => planWorkflowRoutes(view.nodes, view.edges), [view]);
@@ -157,6 +162,10 @@ function WorkflowCanvas() {
 
   function goTo(index: number) { setStageIndex(index); setPlayRequested(false); setSelectedId(null); setHoveredEdgeId(null); setFocusedEdgeId(null); setComposing(false); setFollowing(true); setAnnouncement(""); }
   function select(id: string) { setSelectedId(id); setFocusedEdgeId(null); setPlayRequested(false); }
+  function navigateNode(offset: -1 | 1) {
+    const next = readingOrder[selectedIndex + offset];
+    if (next) select(next.id);
+  }
   function closeComposer() { setComposing(false); requestAnimationFrame(() => panel.current?.querySelector<HTMLButtonElement>('[aria-label="追加节点"]')?.focus()); }
   function add(kind: AddKind, title: string, purpose: string, parents: string[]) {
     const upstream = allNodes.filter(node => parents.includes(node.id));
@@ -169,7 +178,7 @@ function WorkflowCanvas() {
   return <section ref={panel} className={`dw-workflow${expanded ? " is-expanded" : ""}${collapsed ? " is-collapsed" : ""}`} aria-label="动态诊断工作流" style={{ "--dw-body-height": `${bodyHeight}px` } as CSSProperties} onKeyDown={event => {
     const graphNode = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>(".react-flow__node") : null;
     if (graphNode && event.target === graphNode && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); if (graphNode.dataset.id) select(graphNode.dataset.id); }
-    if (event.key === "Escape") { if (composing) closeComposer(); else if (selectedId) setSelectedId(null); else setExpanded(false); }
+    if (event.key === "Escape") { if (composing) closeComposer(); else if (manualSelectionId) setSelectedId(null); else setExpanded(false); }
     if (expanded && event.key === "Tab" && !composing) {
       const controls = [...event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], select, summary, [tabindex="0"]')].filter(element => element.getClientRects().length);
       if (event.shiftKey && document.activeElement === controls[0]) { event.preventDefault(); controls.at(-1)?.focus(); }
@@ -177,7 +186,7 @@ function WorkflowCanvas() {
     }
   }}>
     <header className="dw-header"><div className="dw-title"><GitBranch size={19} /><h2>诊断路径</h2></div><div className="dw-header-tools"><div className="dw-view-switch" aria-label="画布视图"><button aria-pressed={mode === "focus"} onClick={() => { setMode("focus"); setFollowing(true); }}>当前推演</button><button aria-pressed={mode === "all"} onClick={() => { setMode("all"); setFollowing(true); }}>全部路径</button></div><i /><Tool label={collapsed ? "展开模块" : "收起模块"} onClick={() => { setCollapsed(value => !value); setExpanded(false); setPlayRequested(false); }}>{collapsed ? <ChevronDown size={17} /> : <ChevronUp size={17} />}</Tool><Tool label={expanded ? "退出全屏" : "全屏展开"} onClick={() => { setExpanded(value => !value); setCollapsed(false); }}>{expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</Tool></div></header>
-    {!collapsed && <><div className="dw-body">
+    {!collapsed && <><VindicatedReview snapshot={snapshot} onSelect={select} /><div className="dw-body">
       <aside className="dw-hypotheses" aria-label="诊断假设列表"><div className="dw-rail-heading"><h3>诊断假设</h3><span>{String(hypotheses.length).padStart(2, "0")}</span></div><div className="dw-hypothesis-list">{hypotheses.map((hypothesis, index) => <button key={hypothesis.id} className={`dw-hypothesis dw-status-${hypothesis.status}${selectedId === hypothesis.id ? " is-selected" : ""}`} aria-label={`聚焦假设：${hypothesis.title}`} aria-pressed={selectedId === hypothesis.id} onClick={() => select(hypothesis.id)}><span className="dw-hypothesis-number">{hypothesis.status === "ruled-out" ? <X size={12} /> : hypothesis.status === "confirmed" ? <Check size={12} /> : String(index + 1).padStart(2, "0")}</span><span><strong>{hypothesis.title}</strong><small><i />{hypothesis.statusLabel}</small></span><ChevronRight size={13} /></button>)}</div>
         <button className="dw-add-button" aria-label="追加节点" onClick={() => openComposer()}><Plus size={16} />添加节点</button>
         <div className="dw-rail-context"><span className="dw-overline">{recommended ? "检查" : "证据"}</span>{recommended ? <button onClick={() => select(recommended.id)}><ScanLine size={17} /><strong>{recommended.title}</strong><ArrowDownRight size={14} /></button> : <strong>{snapshot.stage.title}</strong>}<p>{recommended?.priority || snapshot.stage.summary}</p>{recommended && <span className="dw-burden">{recommended.burden}</span>}</div>
@@ -192,7 +201,7 @@ function WorkflowCanvas() {
         </ReactFlow>
         <div className="dw-canvas-bottom"><div className="dw-legend"><span><i className="hypothesis" />假设</span><span><i className="test" />检查</span><span><i className="evidence" />证据</span><span><i className="closed" />已终止</span></div><div className="dw-map-tools"><Tool label="缩小画布" onClick={() => { setFollowing(false); void flow.zoomOut({ duration }); }}><Minus size={15} /></Tool><span>{Math.round(zoom * 100)}%</span><Tool label="放大画布" onClick={() => { setFollowing(false); void flow.zoomIn({ duration }); }}><Plus size={15} /></Tool><i /><Tool label="查看完整工作流" onClick={() => { setMode("all"); setFollowing(true); }}><Expand size={15} /></Tool><Tool label="显示缩略图" pressed={mapVisible} onClick={() => setMapVisible(value => !value)}><Layers2 size={15} /></Tool></div></div>
       </div>
-      <div className="dw-detail-dock" data-testid="diagnostic-detail-dock">{selected ? <WorkflowInspector node={selected} stageIndex={stageIndex} related={allNodes.filter(node => node.id !== selected.id && allEdges.some(edge => (edge.source === selected.id && edge.target === node.id) || (edge.target === selected.id && edge.source === node.id)))} onClose={() => setSelectedId(null)} onSelect={select} onContinue={() => openComposer(selected.id)} /> : <div className="dw-detail-placeholder"><ScanLine size={23} /><strong>节点详情</strong><p>选择节点查看依据</p></div>}</div>
+      <div className="dw-detail-dock" data-testid="diagnostic-detail-dock">{selected && <WorkflowInspector node={selected} stageIndex={stageIndex} related={allNodes.filter(node => node.id !== selected.id && allEdges.some(edge => (edge.source === selected.id && edge.target === node.id) || (edge.target === selected.id && edge.source === node.id)))} onClose={() => setSelectedId(null)} onSelect={select} onContinue={() => openComposer(selected.id)} navigation={{ index: selectedIndex, total: readingOrder.length, onPrevious: () => navigateNode(-1), onNext: () => navigateNode(1) }} />}</div>
     </div>
     <footer className="dw-footer"><div className="dw-playback"><Tool label={playing ? "暂停推演" : "自动推演"} onClick={() => { if (ended) goTo(0); setPlayRequested(!playing); setSelectedId(null); setFollowing(true); }}>{playing ? <Pause size={15} /> : <Play size={15} />}</Tool><select aria-label="推演速度" value={speed} onChange={event => setSpeed(Number(event.target.value))}><option value={1}>1×</option><option value={2}>2×</option></select></div><nav className="dw-timeline" aria-label="推演阶段">{workflowStages.map((stage, index) => <button data-testid="diagnostic-stage" key={stage.id} aria-label={`阶段 ${index + 1}：${stage.label}`} aria-current={stageIndex === index ? "step" : undefined} className={index < stageIndex ? "is-past" : ""} onClick={() => goTo(index)}><span>{index < stageIndex ? <Check size={11} /> : index + 1}</span><strong>{stage.label}</strong></button>)}</nav><div className="dw-advance"><Tool label="上一步" disabled={stageIndex === 0} onClick={() => goTo(stageIndex - 1)}><ChevronLeft size={16} /></Tool><button className="dw-button dw-button-primary" aria-label={ended ? "重新推演" : "下一步"} onClick={() => goTo(ended ? 0 : stageIndex + 1)}>{ended ? <RotateCcw size={14} /> : null}{ended ? "重新推演" : "推进一步"}{!ended && <ArrowRight size={15} />}</button></div></footer>
     <div className="dw-resize-bar"><div><Tool label="减小模块高度" disabled={expanded || bodyHeight <= 420} onClick={() => setBodyHeight(value => Math.max(420, value - 90))}><ChevronUp size={12} /></Tool><Tool label="增大模块高度" disabled={expanded || bodyHeight >= 870} onClick={() => setBodyHeight(value => Math.min(870, value + 90))}><ChevronDown size={12} /></Tool></div></div>

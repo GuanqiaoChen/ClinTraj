@@ -43,6 +43,8 @@
 .dw-case-context strong { font-weight: 500; color: #36404b; }
 .dw-case-context > i { width: 1px; height: 12px; background: #d0d2d5; }
 .dw-case-context > span + span { position: relative; }
+.dw-case-context > a { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; color: #496b7b; text-decoration: none; }
+.dw-case-context > a:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 .dw-workflow {
   --dw-ink: #27292c;
@@ -254,6 +256,42 @@ details.dw-detail-section { padding-top: 13px; margin-top: 13px; border-top: 1px
 .dw-provenance dd { margin: 0; overflow-wrap: anywhere; color: #68727e; }
 .dw-inspector > .dw-button-primary { width: 100%; margin-top: 19px; min-height: 37px; }
 .dw-inspector > .dw-button-primary > svg:last-child { margin-left: auto; }
+
+.dw-detail-head { position: sticky; top: -16px; z-index: 2; padding: 7px 0; background: #fff; }
+.dw-detail-navigation { display: flex; align-items: center; gap: 1px; margin-left: auto; }
+.dw-detail-navigation > span { min-width: 38px; text-align: center; color: #6d7782; font-size: 10px; font-variant-numeric: tabular-nums; }
+.dw-detail-navigation .dw-icon-button { width: 26px; height: 28px; }
+.dw-detail-order { margin: 1px 0 17px; color: #7a8690; font-size: 10px; }
+.dw-diagnosis-information { border-bottom: 1px solid #e5e9ed; padding-bottom: 16px; }
+.dw-diagnosis-information h4 { color: #334d58; }
+.dw-vindicated { flex-shrink: 0; border-bottom: 1px solid #dce4e8; background: #f8fbfc; }
+.dw-vindicated > summary { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 10px 20px; color: #56707c; font-size: 11px; cursor: pointer; list-style: none; }
+.dw-vindicated > summary::-webkit-details-marker { display: none; }
+.dw-vindicated > summary > strong { color: #375566; font-size: 11px; letter-spacing: 1.1px; }
+.dw-vindicated > summary > small { color: #7b8790; font-size: 10px; }
+.dw-review-chevron { margin-left: auto; transition: transform .2s; }
+.dw-vindicated[open] .dw-review-chevron { transform: rotate(180deg); }
+.dw-review-context { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 18px; padding: 0 20px 14px; color: #6b7d88; font-size: 11px; line-height: 1.7; }
+.dw-review-context strong { color: #3e5966; font-weight: 550; }
+.dw-review-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; padding: 0 20px; max-height: 360px; overflow-y: auto; scrollbar-width: thin; }
+.dw-review-grid > article { min-width: 0; padding: 14px; border: 1px solid #dce5ea; border-radius: 8px; background: #fff; }
+.dw-review-grid header { display: flex; align-items: center; gap: 8px; }
+.dw-review-grid header > span { display: grid; place-items: center; flex-shrink: 0; width: 24px; height: 24px; border-radius: 5px; color: #386b78; background: linear-gradient(135deg, #e5f1ef, #e9edf6); font-weight: 600; }
+.dw-review-grid h3 { margin: 0; color: #3e5361; font-size: 12px; line-height: 1.5; }
+.dw-review-grid p { margin: 10px 0; color: #697985; font-size: 11px; line-height: 1.8; }
+.dw-review-grid .dw-review-hypotheses { color: #415b69; font-weight: 500; }
+.dw-review-next strong { display: block; color: #5a7a82; font-size: 10px; font-weight: 550; }
+.dw-review-grid article > div { display: flex; flex-wrap: wrap; gap: 5px; }
+.dw-review-grid button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border: 1px solid #e1e8ec; border-radius: 4px; background: #f6f9fb; color: #526f7e; font-size: 10px; text-align: left; }
+.dw-review-grid button:hover { background: #eaf2f4; border-color: #bad2d9; }
+.dw-review-note { margin: 0; padding: 12px 20px; color: #7b8790; font-size: 10px; line-height: 1.7; }
+@media (max-width: 1200px) { .dw-review-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 600px) {
+  .dw-vindicated > summary { padding: 10px 12px; gap: 7px; }
+  .dw-vindicated > summary > small { display: none; }
+  .dw-review-grid { grid-template-columns: minmax(0, 1fr); padding: 0 12px; }
+  .dw-review-context, .dw-review-note { padding-left: 12px; padding-right: 12px; }
+}
 
 .dw-footer { display: flex; align-items: center; gap: 20px; min-height: 76px; padding: 12px 20px; border-top: 1px solid var(--dw-line); background: #fff; flex-shrink: 0; }
 .dw-playback { display: flex; align-items: center; gap: 9px; padding-right: 19px; border-right: 1px solid #e7e9ec; }

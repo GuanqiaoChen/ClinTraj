@@ -74,8 +74,16 @@ export function planWorkflowRoutes(nodes: WorkflowNode[], edges: WorkflowEdge[])
   }
   for (const group of incoming.values()) {
     group.sort((left, right) => left.source.x - right.source.x || left.source.y - right.source.y || compareId(left.edge.id, right.edge.id));
+    const target = group[0].target;
+    // Reserve a complete, evenly spaced set for high-degree shared checks.
+    // Greedy nearest-port allocation can leave the final arrival with no gap.
+    const denseSlots = group.length >= 6 ? Array.from({ length: 17 }, (_, index) => 0.2 + index * 0.0375)
+      .filter(offset => !connections.some(other => other.source.y < target.y &&
+        Math.abs(other.source.x + routes.get(other.edge.id)!.sourceOffset * VIEW_NODE_WIDTH - (target.x + offset * VIEW_NODE_WIDTH)) < 10)) : [];
     group.forEach((connection, index) => {
-      routes.get(connection.edge.id)!.targetOffset = portOffset(index, group.length);
+      routes.get(connection.edge.id)!.targetOffset = denseSlots.length >= group.length
+        ? denseSlots[Math.round(index * (denseSlots.length - 1) / (group.length - 1))]
+        : portOffset(index, group.length);
     });
   }
 
@@ -92,7 +100,18 @@ export function planWorkflowRoutes(nodes: WorkflowNode[], edges: WorkflowEdge[])
         Math.abs(other.source.x + routes.get(other.edge.id)!.sourceOffset * VIEW_NODE_WIDTH - x) < 10) ||
         arrivals.some(other => other.y === target.y && Math.abs(other.x - x) < 10);
     };
-    const candidates = [preferred, ...Array.from({ length: 17 }, (_, index) => 0.2 + index * 0.0375)]
+    // Dense shared checks need exact gap boundaries, not only a coarse grid:
+    // a previously placed fractional port may block both neighboring grid slots.
+    const occupiedX = [
+      ...connections.filter(other => other.edge.id !== edge.id && other.source.y < target.y && other.target.y > source.y)
+        .map(other => other.source.x + routes.get(other.edge.id)!.sourceOffset * VIEW_NODE_WIDTH),
+      ...arrivals.filter(other => other.y === target.y).map(other => other.x),
+    ];
+    const candidates = [preferred, 0.2, 0.8, ...occupiedX.flatMap(x => [
+      (x - target.x - 10.001) / VIEW_NODE_WIDTH,
+      (x - target.x + 10.001) / VIEW_NODE_WIDTH,
+    ]), ...Array.from({ length: 17 }, (_, index) => 0.2 + index * 0.0375)]
+      .filter(offset => offset >= 0.2 && offset <= 0.8)
       .sort((left, right) => Math.abs(left - preferred) - Math.abs(right - preferred));
     route.targetOffset = candidates.find(offset => !blocked(offset)) ?? preferred;
     arrivals.push({ x: target.x + route.targetOffset * VIEW_NODE_WIDTH, y: target.y });

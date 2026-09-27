@@ -22,6 +22,18 @@ export interface WorkflowView {
   relatedNodeIds: Set<string>;
 }
 
+/** Read the visible cards by row, then left to right without mutating the view. */
+export function getWorkflowReadingOrder(nodes: readonly WorkflowNode[]): WorkflowNode[] {
+  return [...nodes].sort((left, right) =>
+    left.y - right.y || left.x - right.x || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0),
+  );
+}
+
+/** A new step opens the first visible card; an empty filtered view has no card. */
+export function getDefaultWorkflowNodeId(view: Pick<WorkflowView, 'nodes'>): string | null {
+  return getWorkflowReadingOrder(view.nodes)[0]?.id ?? null;
+}
+
 type Position = { x: number; y: number };
 type FocusLayout = { nodes: Record<string, Position>; labels: string[] };
 
@@ -30,27 +42,35 @@ const at = (step: number, branch: number): Position => ({
   y: step * VIEW_ROW_GAP,
 });
 
-// Each local view shows a diagnostic question and its immediate next step.
+// Each local view shows the current reasoning step and its evidence/checks.
+// Initial breadth occupies two rows so extracardiopulmonary possibilities stay
+// visible without turning the canvas into a single very wide strip of cards.
 // Historical findings remain in the snapshot for the detail rail and overview.
 const focusLayouts: FocusLayout[] = [
   {
     nodes: {
       copd: at(0, 0), asthma: at(0, 1), 'heart-failure': at(0, 2),
-      spirometry: at(1, 0), 'baseline-tests': at(1, 1), 'cardiac-tests': at(1, 2),
+      'reflux-aspiration': at(0, 3), vascular: at(0, 4),
+      'infection-neoplasm': at(1, 0), 'deficiency-congenital': at(1, 1),
+      'immune-inflammatory': at(1, 2), 'toxic-iatrogenic': at(1, 3), metabolic: at(1, 4),
+      spirometry: at(2, 0), 'baseline-tests': at(2, 2), 'cardiac-tests': at(2, 4),
     },
-    labels: ['假设', '检查'],
+    labels: ['诊断假设', 'VINDICATED 鉴别', '共享检查'],
   },
   {
     nodes: {
-      spirometry: at(0, 0), 'baseline-tests': at(0, 1), 'cardiac-tests': at(0, 2),
+      spirometry: at(0, 0), 'baseline-tests': at(0, 2), 'cardiac-tests': at(0, 4),
       obstruction: at(1, 0), 'sputum-history': at(1, 1), 'cardiac-evidence': at(1, 2),
+      'reflux-history': at(1, 3), 'red-flag-review': at(1, 4),
     },
-    labels: ['检查', '证据'],
+    labels: ['检查', '新证据 · 全面重评'],
   },
   {
     nodes: {
-      obstruction: at(0, 0.5), 'sputum-history': at(0, 2),
+      obstruction: at(0, 0), 'sputum-history': at(0, 1),
+      'reflux-history': at(0, 2), 'red-flag-review': at(0, 3),
       'repeat-spirometry': at(1, 0), 'peak-flow': at(1, 1), bronchiectasis: at(1, 2),
+      'reflux-review': at(1, 3),
       'chest-ct': at(2, 2),
     },
     labels: ['证据', '检查 · 假设', '检查'],
@@ -58,20 +78,23 @@ const focusLayouts: FocusLayout[] = [
   {
     nodes: {
       'repeat-spirometry': at(0, 0), 'peak-flow': at(0, 1), 'chest-ct': at(0, 2),
+      'reflux-review': at(0, 3),
       'persistent-obstruction': at(1, 0.5), 'ct-evidence': at(1, 2),
+      'reflux-evidence': at(1, 3),
     },
     labels: ['检查', '证据'],
   },
   {
     nodes: {
       'persistent-obstruction': at(0, 0), 'ct-evidence': at(0, 1), 'cardiac-evidence': at(0, 2),
-      'respiratory-review': at(1, 1),
+      'reflux-evidence': at(0, 3), 'red-flag-review': at(0, 4),
+      'respiratory-review': at(1, 2),
     },
-    labels: ['证据', '检查'],
+    labels: ['证据', '医生复核'],
   },
   {
     nodes: { 'respiratory-review': at(0, 0), 'confirmed-diagnosis': at(1, 0) },
-    labels: ['检查', '假设'],
+    labels: ['医生复核', '诊断确认'],
   },
 ];
 

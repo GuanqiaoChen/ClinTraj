@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowRight, ArrowUpRight, ChevronRight, FlaskConical, Plus, X } from "lucide-react";
+import { ArrowRight, ArrowUpRight, ChevronLeft, ChevronRight, FlaskConical, Plus, RotateCcw } from "lucide-react";
+import { useEffect, useRef } from "react";
 import {
   getWorkflowNodeHistory,
   workflowSources,
@@ -22,25 +23,39 @@ interface WorkflowInspectorProps {
   onClose: () => void;
   onSelect: (id: string) => void;
   onContinue: () => void;
+  navigation: { index: number; total: number; onPrevious: () => void; onNext: () => void };
 }
 
-export function WorkflowInspector({ node, stageIndex, related, onClose, onSelect, onContinue }: WorkflowInspectorProps) {
+export function WorkflowInspector({ node, stageIndex, related, onClose, onSelect, onContinue, navigation }: WorkflowInspectorProps) {
+  const inspector = useRef<HTMLElement>(null);
+  useEffect(() => { if (inspector.current) inspector.current.scrollTop = 0; }, [node.id, stageIndex]);
   const history = getWorkflowNodeHistory(node.id, stageIndex);
   const sources = workflowSources.filter(source => node.sourceIds.includes(source.id));
   const canContinue = node.status !== "ruled-out" && node.kind !== "conclusion";
   const isDecision = node.kind === "test" || node.kind === "consultation";
 
   return (
-    <aside className="dw-inspector" role="complementary" aria-label="节点详情">
+    <aside ref={inspector} className="dw-inspector" role="complementary" aria-label="节点详情" data-node-id={node.id}>
       <header className="dw-detail-head">
         <span className={`dw-detail-kind kind-${node.kind}`}>{kindLabels[node.kind]}</span>
-        <button type="button" className="dw-icon-button" aria-label="关闭节点详情" title="关闭节点详情" onClick={onClose}>
-          <X size={16} aria-hidden="true" />
-        </button>
+        <nav className="dw-detail-navigation" aria-label="按行浏览方框">
+          <button type="button" className="dw-icon-button" aria-label="上一个方框" title="上一个方框" disabled={navigation.index <= 0} onClick={navigation.onPrevious}><ChevronLeft size={16} aria-hidden="true" /></button>
+          <span aria-live="polite">{navigation.index < 0 ? "—" : navigation.index + 1} / {navigation.total}</span>
+          <button type="button" className="dw-icon-button" aria-label="下一个方框" title="下一个方框" disabled={navigation.index >= navigation.total - 1} onClick={navigation.onNext}><ChevronRight size={16} aria-hidden="true" /></button>
+          <button type="button" className="dw-icon-button" aria-label="返回本步首个方框" title="返回本步首个方框" onClick={onClose}><RotateCcw size={13} aria-hidden="true" /></button>
+        </nav>
       </header>
+      <p className="dw-detail-order">从上到下 · 同行从左到右</p>
 
       <h3>{node.title}</h3>
       <span className={`dw-detail-status status-${node.status}`}>{node.statusLabel}</span>
+
+      {node.details.length > 0 && (
+        <section className="dw-detail-section dw-diagnosis-information" aria-label="诊断信息">
+          <h4>诊断信息</h4>
+          <ul>{node.details.map((entry, index) => <li key={`${node.id}-detail-${index}`}>{entry}</li>)}</ul>
+        </section>
+      )}
 
       <section className="dw-detail-section">
         <h4>{isDecision ? "为什么选择这一步" : "判断依据"}</h4>
@@ -71,13 +86,6 @@ export function WorkflowInspector({ node, stageIndex, related, onClose, onSelect
             </button>
           ))}
         </section>
-      )}
-
-      {node.details.length > 0 && (
-        <details className="dw-detail-section">
-          <summary>诊断信息</summary>
-          <ul>{node.details.map((entry, index) => <li key={`${node.id}-detail-${index}`}>{entry}</li>)}</ul>
-        </details>
       )}
 
       {history.length > 0 && (

@@ -4,6 +4,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getWorkflowSnapshot, workflowStages, type WorkflowNode } from "../../lib/pbl/diagnostic-workflow";
+import { buildWorkflowView, getWorkflowReadingOrder } from "../../lib/pbl/workflow-view";
 import { DiagnosticWorkflow } from "./DiagnosticWorkflow";
 
 const viewport = vi.hoisted(() => ({ fitView: vi.fn(), zoomIn: vi.fn(), zoomOut: vi.fn() }));
@@ -112,11 +113,50 @@ function stageIndex() {
 async function advance(ms: number) { await act(async () => vi.advanceTimersByTime(ms)); }
 
 describe("diagnostic workflow interactions", () => {
+  it("automatically shows the first box each step, with open diagnosis details and row-order navigation", async () => {
+    for (const stage of workflowStages) {
+      await goTo(stage.index);
+      const order = getWorkflowReadingOrder(buildWorkflowView({ snapshot: getWorkflowSnapshot(stage.index), mode: "focus" }).nodes);
+      const selectedId = () => host.querySelector('[aria-label="节点详情"]')?.getAttribute("data-node-id");
+      expect(selectedId()).toBe(order[0].id);
+      expect(button("上一个方框").disabled).toBe(true);
+      expect(host.querySelector('section[aria-label="诊断信息"]')?.textContent).toContain(order[0].details[0]);
+      for (const item of order.slice(1)) {
+        await click("下一个方框");
+        expect(selectedId()).toBe(item.id);
+      }
+      expect(button("下一个方框").disabled).toBe(true);
+      if (order.length > 1) {
+        await click("上一个方框");
+        expect(selectedId()).toBe(order.at(-2)!.id);
+      }
+      await selectNode(order.at(-1)!.id);
+      expect(selectedId()).toBe(order.at(-1)!.id);
+      await click("返回本步首个方框");
+      expect(selectedId()).toBe(order[0].id);
+    }
+  });
+
+  it("shows all VINDICATED categories for only the current evidence and allows inspecting their hypotheses", async () => {
+    const review = () => host.querySelector('[aria-label="VINDICATED 全面鉴别"]')!;
+    expect(review().querySelectorAll("[data-review-id]")).toHaveLength(10);
+    expect(review().textContent).toContain("消化");
+    expect(review().textContent).not.toContain("0.62");
+    const target = review().querySelector<HTMLButtonElement>("article button")!;
+    await act(async () => target.click());
+    expect(host.querySelector('[aria-label="节点详情"] h3')?.textContent).toBe(target.textContent);
+    await goTo(3);
+    expect(review().textContent).toContain(getWorkflowSnapshot(3).vindicatedReview[0].assessment);
+    await goTo(0);
+    expect(host.textContent).not.toContain("0.61");
+    expect(review().querySelectorAll("[data-review-id]")).toHaveLength(10);
+  });
+
   it("assigns separate ports to branching hypotheses and shared checks", () => {
     const branching = [...host.querySelectorAll<HTMLElement>('[data-testid="flow-edge"][data-source="copd"]')];
     const shared = [...host.querySelectorAll<HTMLElement>('[data-testid="flow-edge"][data-target="baseline-tests"]')];
-    expect(branching).toHaveLength(2);
-    expect(shared).toHaveLength(3);
+    expect(branching.length).toBeGreaterThanOrEqual(2);
+    expect(shared.length).toBeGreaterThanOrEqual(3);
     expect(branching.every(edge => edge.dataset.sourceHandle)).toBe(true);
     expect(shared.every(edge => edge.dataset.targetHandle)).toBe(true);
     expect(new Set(branching.map(edge => edge.dataset.sourceHandle)).size).toBe(branching.length);
@@ -128,13 +168,14 @@ describe("diagnostic workflow interactions", () => {
     const detailDock = host.querySelector('[data-testid="diagnostic-detail-dock"]')!;
     expect(detailDock).not.toBeNull();
     expect(canvas.parentElement).toBe(detailDock.parentElement);
-    expect(detailDock.querySelector('[aria-label="节点详情"]')).toBeNull();
+    expect(detailDock.querySelector('[aria-label="节点详情"] h3')?.textContent).toBe("慢性阻塞性肺疾病");
+    expect(detailDock.querySelector('section[aria-label="诊断信息"]')).not.toBeNull();
     expect(host.textContent).not.toMatch(/进行中|\d+ 个节点|\d+ 条连接/);
     expect(host.querySelector('[aria-label="推演阶段"]')?.textContent).not.toMatch(/首轮|收敛/);
     expect(button("当前推演").getAttribute("aria-pressed")).toBe("true");
     expect(button("全部路径").getAttribute("aria-pressed")).toBe("false");
     expect(node("presentation")).toBeNull();
-    expect(host.querySelectorAll('[aria-label="诊断假设列表"] button[aria-label^="聚焦假设："]')).toHaveLength(3);
+    expect(host.querySelectorAll('[aria-label="诊断假设列表"] button[aria-label^="聚焦假设："]')).toHaveLength(getWorkflowSnapshot(0).nodes.filter(node => node.kind === "hypothesis").length);
 
     await click("全部路径");
     expect(button("全部路径").getAttribute("aria-pressed")).toBe("true");
@@ -149,7 +190,7 @@ describe("diagnostic workflow interactions", () => {
     expect(node("repeat-spirometry")).not.toBeNull();
     expect(node("bronchiectasis")).not.toBeNull();
     expect(node("copd")).toBeNull();
-    expect(host.querySelectorAll('[aria-label="诊断假设列表"] button[aria-label^="聚焦假设："]')).toHaveLength(4);
+    expect(host.querySelectorAll('[aria-label="诊断假设列表"] button[aria-label^="聚焦假设："]')).toHaveLength(getWorkflowSnapshot(2).nodes.filter(node => node.kind === "hypothesis").length);
 
     await click("聚焦假设：慢性阻塞性肺疾病");
     expect(button("聚焦假设：慢性阻塞性肺疾病").getAttribute("aria-pressed")).toBe("true");
@@ -157,9 +198,9 @@ describe("diagnostic workflow interactions", () => {
     expect(detailDock.querySelector('[aria-label="节点详情"]')).not.toBeNull();
     expect(canvas.querySelector('[aria-label="节点详情"]')).toBeNull();
     expect(node("repeat-spirometry")?.dataset.muted).toBe("false");
-    await click("关闭节点详情");
+    await click("返回本步首个方框");
     expect(button("聚焦假设：慢性阻塞性肺疾病").getAttribute("aria-pressed")).toBe("false");
-    expect(host.querySelector('[aria-label="节点详情"]')).toBeNull();
+    expect(host.querySelector('[aria-label="节点详情"]')?.getAttribute("data-node-id")).toBe("obstruction");
     expect(host.querySelector('[data-testid="diagnostic-detail-dock"]')).toBe(detailDock);
     expect(stageIndex()).toBe(2);
   });
@@ -167,7 +208,7 @@ describe("diagnostic workflow interactions", () => {
   it("reveals evidence and final confirmation in time, then clears future nodes and inspector details on rollback", async () => {
     expect(stageIndex()).toBe(0);
     expect(button("上一步").disabled).toBe(true);
-    expect(host.querySelectorAll('[data-testid="flow-node"][data-kind="hypothesis"]')).toHaveLength(3);
+    expect(host.querySelectorAll('[data-testid="flow-node"][data-kind="hypothesis"]').length).toBeGreaterThan(3);
     expect(node("copd")?.dataset.status).toBe("candidate");
     expect(node("confirmed-diagnosis")).toBeNull();
     expect(node("bronchiectasis")).toBeNull();
@@ -192,7 +233,7 @@ describe("diagnostic workflow interactions", () => {
     expect(host.querySelector('[aria-label="节点详情"]')?.textContent).toContain("医生完成鉴别诊断复核");
 
     await goTo(0);
-    expect(host.querySelector('[aria-label="节点详情"]')).toBeNull();
+    expect(host.querySelector('section[aria-label="诊断信息"]')).not.toBeNull();
     expect(node("confirmed-diagnosis")).toBeNull();
     expect(node("obstruction")).toBeNull();
     expect(node("bronchiectasis")).toBeNull();

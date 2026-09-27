@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceTour } from "./WorkspaceTour";
 import { TOUR_DURATION_MS, TOUR_TIMING } from "../../lib/demo/workspace-tour";
+import { getWorkflowSnapshot } from "../../lib/pbl/diagnostic-workflow";
 
 let host: HTMLDivElement;
 let root: Root;
@@ -64,12 +65,38 @@ async function seek(ms: number) {
 }
 
 describe("workspace tour playback controls", () => {
+  it("renders synchronized PBL cards, supports inspection and distinguishes paused AI animation", async () => {
+    await seek(TOUR_TIMING.firstGenerationStart + 8000);
+    expect(host.querySelector('[aria-label="第 1 轮 AI 思考演示"]')).not.toBeNull();
+    expect(host.querySelectorAll('.tour-vindicated-item')).toHaveLength(10);
+    expect(host.querySelector('.workspace-tour')?.classList.contains('is-paused')).toBe(true);
+    await click('播放演示');
+    expect(host.querySelector('.workspace-tour')?.classList.contains('is-playing')).toBe(true);
+    await seek(TOUR_TIMING.evidenceSubmitted);
+    const snapshot = getWorkflowSnapshot(1);
+    for (const card of host.querySelectorAll<HTMLElement>('[data-pbl-node-id]')) {
+      const source = snapshot.nodes.find(node => node.id === card.dataset.pblNodeId)!;
+      expect(card.textContent).toContain(source.title);
+      expect(card.textContent).toContain(source.summary);
+    }
+    const card = host.querySelector<HTMLButtonElement>('[data-pbl-node-id="reflux-history"]')!;
+    await act(async () => card.click());
+    expect(host.querySelector('[aria-label="PBL 方框详情"]')?.getAttribute('data-selected-node-id')).toBe('reflux-history');
+    await click('下一个 PBL 方框');
+    expect(host.querySelector('[aria-label="PBL 方框详情"]')?.getAttribute('data-selected-node-id')).not.toBe('reflux-history');
+    await seek(TOUR_TIMING.thirdConfirmed);
+    expect(host.querySelector('[data-pbl-node-id="confirmed-diagnosis"]')).not.toBeNull();
+    await seek(TOUR_TIMING.firstCandidates);
+    expect(host.querySelector('[data-pbl-node-id="confirmed-diagnosis"]')).toBeNull();
+    expect(host.textContent).not.toMatch(/PBL-GI-OBS-01|PBL-CT-01|急性加重|无创通气|\?{3}/);
+  });
+
   it("starts typing, pauses without drifting, and resumes from the same position", async () => {
     expect(host.textContent).toContain("开始观看");
     await click("开始观看");
     await advance(10_000);
     expect(position()).toBe(10_000);
-    expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="演示中的患者信息输入"]')!.value).toContain("合成病例");
+    expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="演示中的患者信息输入"]')!.value).toContain("62 岁男性");
     await click("暂停演示");
     await advance(5_000);
     expect(position()).toBe(10_000);
@@ -82,13 +109,13 @@ describe("workspace tour playback controls", () => {
   it("seeks both ways, clears later evidence, and keeps all three candidates after choosing", async () => {
     await seek(TOUR_TIMING.evidenceSubmitted);
     expect(host.querySelectorAll(".tour-evidence-item")).toHaveLength(2);
-    expect(host.textContent).toContain("7.29");
+    expect(host.textContent).toContain("0.62");
     await seek(TOUR_TIMING.firstAdditionalSelection);
     expect(position()).toBe(TOUR_TIMING.firstAdditionalSelection);
     expect(host.querySelectorAll(".tour-candidate")).toHaveLength(3);
     expect(host.querySelectorAll(".tour-candidate.is-selected")).toHaveLength(2);
     expect(host.querySelectorAll(".tour-evidence-item")).toHaveLength(1);
-    expect(host.textContent).not.toContain("7.29");
+    expect(host.textContent).not.toContain("0.62");
     expect(button("播放演示")).toBeTruthy();
     expect(fetch).not.toHaveBeenCalled();
   });
