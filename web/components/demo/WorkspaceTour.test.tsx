@@ -68,7 +68,10 @@ describe("workspace tour playback controls", () => {
   it("renders synchronized PBL cards, supports inspection and distinguishes paused AI animation", async () => {
     await seek(TOUR_TIMING.firstGenerationStart + 8000);
     expect(host.querySelector('[aria-label="第 1 轮 AI 思考演示"]')).not.toBeNull();
-    expect(host.querySelectorAll('.tour-vindicated-item')).toHaveLength(10);
+    expect(host.querySelectorAll('.tour-orbit-letter')).toHaveLength(10);
+    expect(host.querySelector('.tour-orbit-letter.is-scanning')).not.toBeNull();
+    expect(host.querySelector('.tour-generation-activity')?.textContent).toContain('逐项重评 VINDICATED');
+    expect(host.querySelector('.tour-candidate-skeletons')).toBeNull();
     expect(host.querySelector('.workspace-tour')?.classList.contains('is-paused')).toBe(true);
     await click('播放演示');
     expect(host.querySelector('.workspace-tour')?.classList.contains('is-playing')).toBe(true);
