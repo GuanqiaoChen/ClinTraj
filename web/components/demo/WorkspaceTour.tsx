@@ -138,13 +138,13 @@ function Generation({ frame }: { frame: TourFrame }) {
   const rows = frame.snapshot.vindicatedReview;
   const activeRow = Math.min(rows.length - 1, Math.floor(frame.generationProgress * rows.length));
   const currentStep = frame.generationSteps.find(step => step.status === "active") ?? frame.generationSteps[frame.generationSteps.length - 1];
-  return <div className="tour-generation tour-ai-surface" aria-label={`第 ${frame.round} 轮 AI 思考演示`}>
+  return <div className="tour-generation tour-ai-surface" aria-label={`第 ${frame.round} 轮智能体思考演示`}>
     <div className="tour-ai-glimmers" aria-hidden="true"><i /><i /><i /><i /></div>
     <div className="tour-generation-heading"><span className="tour-generation-orbit"><Sparkles size={25} /></span><div><h3>{frame.snapshot.stage.title}</h3><p>{frame.snapshot.stage.summary}</p></div></div>
     <div className="tour-generation-activity" role="status" aria-live="polite">
       <span className="tour-activity-spark" aria-hidden="true">✳</span>
-      <span className="tour-activity-verb" aria-hidden="true"><span>Thinking</span><span>Cooking</span></span>
-      <span className="tour-activity-label">{currentStep?.label}</span>
+      <span className="tour-activity-verb tour-shimmer-text">正在思考</span>
+      <span className="tour-activity-label tour-shimmer-text">{currentStep?.label}</span>
       <span className="tour-activity-ellipsis" aria-hidden="true">···</span>
     </div>
     <div className="tour-generation-meter" aria-hidden="true"><span style={{ width: `${frame.generationProgress * 100}%` }} /></div>
@@ -155,7 +155,7 @@ function Generation({ frame }: { frame: TourFrame }) {
       <div className="tour-orbit-core"><span>正在复核</span><strong>{rows[activeRow]?.label ?? "VINDICATED"}</strong><small>{String(Math.max(0, activeRow) + 1).padStart(2, "0")} / {String(rows.length).padStart(2, "0")}</small></div>
     </div>
     {rows[activeRow] && <div className="tour-thinking-detail" key={rows[activeRow].id}><strong>{rows[activeRow].label}</strong><p>{rows[activeRow].assessment}</p><small>{rows[activeRow].nextStep}</small></div>}
-    <div className="tour-candidate-forming" aria-hidden="true"><span className="tour-candidate-forming-mark">✳</span><span>正在形成三个医生候选</span><span className="tour-candidate-forming-dots">···</span></div>
+    <div className="tour-candidate-forming" aria-hidden="true"><span className="tour-candidate-forming-mark">✳</span><span className="tour-shimmer-text">正在形成三个医生候选</span><span className="tour-candidate-forming-dots">···</span></div>
   </div>;
 }
 
@@ -290,7 +290,7 @@ export function WorkspaceTour() {
         </div>
         <nav className="tour-chapters" aria-label="演示章节">{TOUR_CHAPTERS.map((chapter, index) => <button type="button" key={chapter.id} className={`${index === frame.chapterIndex ? "is-active" : ""} ${index < frame.chapterIndex ? "is-complete" : ""}`} aria-current={index === frame.chapterIndex ? "step" : undefined} onClick={() => seek(chapter.startMs)}><span>{index < frame.chapterIndex ? <Check size={12} /> : String(index + 1).padStart(2, "0")}</span><strong>{chapter.shortTitle}</strong><small>{clock(chapter.startMs)}</small></button>)}</nav>
       </section>
-      <footer className="tour-footer"><p><CircleDot size={12} />合成病例与预编排操作 · AI 思考为演示，不调用模型</p><span>空格：播放 / 暂停 · ← →：5 秒 · R：重播</span></footer>
+      <footer className="tour-footer"><p><CircleDot size={12} />合成病例与预编排操作 · 智能体思考为演示，不调用模型</p><span>空格：播放 / 暂停 · ← →：5 秒 · R：重播</span></footer>
     </main>
   </div>;
 }

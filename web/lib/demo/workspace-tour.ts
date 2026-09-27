@@ -86,7 +86,7 @@ const evidenceTimings = [
   { phase: 'evidence-1', draftStart: 70_000, draftEnd: 84_000, submitted: 86_000, index: 1 },
   { phase: 'evidence-2', draftStart: 136_000, draftEnd: 151_000, submitted: 154_000, index: 2 },
 ] as const;
-const generationLabels = ['整理当前可用证据', '逐项重评 VINDICATED', '比较信息价值与检查负担', '形成三个医生候选'];
+const generationLabels = ['整理当前可用证据', '逐项复核各类病因', '比较信息价值与检查负担', '形成三个医生候选'];
 
 function progressBetween(time: number, start: number, end: number) { return Math.min(1, Math.max(0, (time - start) / (end - start))); }
 function typedText(text: string, progress: number) { return Array.from(text).slice(0, Math.floor(Array.from(text).length * progress)).join(''); }
@@ -160,7 +160,7 @@ export function getTourFrame(requestedTimeMs: number) {
     reviewNote: typedText(roundDefinition.reviewNote, progressBetween(timeMs, roundTiming.noteStart, roundTiming.noteEnd)),
     activeCandidateId, defaultNodeId, trajectory, caption, coachTitle: chapter.title, focusTarget,
     completed: timeMs >= TOUR_DURATION_MS, summaryVisible: timeMs >= TOUR_TIMING.summary,
-    statusLabel: !sessionCreated ? '正在录入' : isGenerating ? 'AI 正在思考' : evidenceTiming && !evidenceSubmitted ? '录入新证据' : decisionConfirmed ? '医生已确认' : candidates.length ? '等待医生审核' : '准备生成',
+    statusLabel: !sessionCreated ? '正在录入' : isGenerating ? '智能体正在思考' : evidenceTiming && !evidenceSubmitted ? '录入新证据' : decisionConfirmed ? '医生已确认' : candidates.length ? '等待医生审核' : '准备生成',
   };
 }
 
