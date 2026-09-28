@@ -698,7 +698,7 @@
   stroke: #78aeb6;
   stroke-width: 12px;
   filter: blur(5px);
-  opacity: .34;
+  opacity: .18;
   animation: tour-halo-wave 7s ease-in-out infinite;
 }
 .workspace-tour .tour-orbit-core > span { font-size: 11px; letter-spacing: 1.5px; color: #759aa5; }
@@ -715,9 +715,9 @@
 @keyframes tour-text-shimmer { 0% { background-position: 100% 50%; text-shadow: 0 0 0 #90b8c200; } 50% { text-shadow: 0 0 5px #90b8c24d; } 100% { background-position: -100% 50%; text-shadow: 0 0 0 #90b8c200; } }
 @keyframes tour-detail-enter { from { opacity: .4; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes tour-halo-wave {
-  0%, 100% { d: var(--halo-wave-0); opacity: .34; }
-  33% { d: var(--halo-wave-1); opacity: .4; }
-  66% { d: var(--halo-wave-2); opacity: .32; }
+  0%, 100% { d: var(--halo-wave-0); opacity: .18; }
+  33% { d: var(--halo-wave-1); opacity: .22; }
+  66% { d: var(--halo-wave-2); opacity: .16; }
 }
 @keyframes tour-halo-spin { to { transform: rotate(360deg); } }
 @keyframes tour-halo-breathe { 0%, 100% { opacity: .64; } 50% { opacity: 1; } }
