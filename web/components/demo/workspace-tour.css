@@ -637,37 +637,17 @@
   .workspace-tour .tour-shell:fullscreen .tour-decision-body { padding: 14px; }
 }
 
-/* The workbench and PBL rail share a clock and a restrained clinical palette. */
-.workspace-tour .tour-columns { grid-template-columns: minmax(210px, .72fr) minmax(360px, 1.6fr) minmax(270px, 1fr); gap: 13px; padding: 16px; }
-.workspace-tour .tour-pbl-panel { min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #bdcbd1; border-radius: 8px; background: #f9fcfc; }
-.workspace-tour .tour-pbl-body { min-height: 0; flex: 1; overflow: auto; padding: 14px; scrollbar-width: thin; scrollbar-color: #bdd0d5 transparent; }
-.workspace-tour .tour-pbl-stage { display: flex; gap: 9px; margin-bottom: 14px; }
-.workspace-tour .tour-pbl-stage > span { flex-shrink: 0; display: grid; place-items: center; width: 27px; height: 27px; border-radius: 6px; color: #356a74; background: #e4f0ef; font-size: 11px; }
-.workspace-tour .tour-pbl-stage strong { font-size: 12px; line-height: 1.6; color: #354f5d; }
-.workspace-tour .tour-pbl-stage p { margin: 5px 0 0; font-size: 10px; line-height: 1.8; color: #798994; }
-.workspace-tour .tour-pbl-boxes { display: grid; grid-template-columns: 1fr; gap: 8px; max-height: 260px; padding: 3px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #bdd0d5 transparent; }
-.workspace-tour .tour-pbl-box { position: relative; display: block; width: 100%; padding: 11px 12px; border: 1px solid #cbd1e0; border-radius: 6px; text-align: left; background: linear-gradient(125deg, #f0f0f8, #edf2f8); color: #40566b; cursor: pointer; }
-.workspace-tour .tour-pbl-box > span { display: block; color: #7a829b; font-size: 9px; }
-.workspace-tour .tour-pbl-box > strong { display: block; margin: 5px 0; font-size: 12px; line-height: 1.6; }
-.workspace-tour .tour-pbl-box > p { margin: 0; color: #738491; font-size: 10px; line-height: 1.7; }
-.workspace-tour .tour-pbl-box.is-test, .workspace-tour .tour-pbl-box.is-consultation { border-radius: 14px; border-color: #cbd7dd; background: #fff; }
-.workspace-tour .tour-pbl-box.is-evidence { background: #edf5f1; border-color: #c7d9d0; }
-.workspace-tour .tour-pbl-box.is-conclusion { background: #e2efe9; border-color: #8fb3a1; }
-.workspace-tour .tour-pbl-box.is-selected { border-color: #598b98; box-shadow: 0 0 0 2px #6f9eae24; }
-.workspace-tour .tour-pbl-box:focus-visible { outline: 2px solid #528493; outline-offset: 2px; }
-.workspace-tour .tour-pbl-detail { margin-top: 15px; padding-top: 13px; border-top: 1px solid #d8e3e7; }
-.workspace-tour .tour-pbl-detail-nav { display: flex; align-items: center; gap: 5px; margin-bottom: 11px; }
-.workspace-tour .tour-pbl-detail-nav > span { flex: 1; font-size: 10px; color: #7a8a96; }
-.workspace-tour .tour-pbl-detail-nav button { display: grid; place-items: center; width: 27px; height: 27px; border: 1px solid #d5e0e5; border-radius: 5px; background: #fff; color: #537889; cursor: pointer; }
-.workspace-tour .tour-pbl-detail-nav button:disabled { opacity: .3; cursor: default; }
-.workspace-tour .tour-pbl-detail h4 { font-size: 13px; color: #355262; }
-.workspace-tour .tour-pbl-detail > p, .workspace-tour .tour-pbl-detail li { font-size: 11px; line-height: 1.85; color: #607684; }
-.workspace-tour .tour-pbl-detail ul { margin: 10px 0; padding-left: 15px; }
-.workspace-tour .tour-pbl-detail li + li { margin-top: 5px; }
-.workspace-tour .tour-pbl-detail > small { font-size: 9px; color: #8a9aa3; }
-.workspace-tour .tour-pbl-source { display: grid; gap: 6px; margin: 13px 0; }
-.workspace-tour .tour-pbl-source a, .workspace-tour .tour-pbl-open { display: inline-flex; align-items: center; gap: 5px; color: #548091; font-size: 10px; text-decoration: none; }
-.workspace-tour .tour-pbl-open { margin-top: 15px; }
+/* The complete PBL module shares the workbench clock and needs a full-width canvas. */
+.workspace-tour .tour-stage { height: auto; }
+.workspace-tour .tour-stage:has(.tour-start-overlay),
+.workspace-tour .tour-stage:has(.tour-summary) { height: clamp(700px, 82dvh, 1000px); }
+.workspace-tour .tour-columns { grid-template-columns: minmax(240px, .75fr) minmax(0, 1.85fr); grid-template-rows: 640px auto; gap: 16px; padding: 16px; flex: none; }
+.workspace-tour .tour-pbl-panel { grid-column: 1 / -1; min-width: 0; }
+.workspace-tour .tour-candidate-focus { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 0; border: 0; background: none; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.workspace-tour .tour-candidate-focus:hover { color: #35758a; }
+.workspace-tour .tour-candidate-focus svg { flex-shrink: 0; color: #65818e; }
+.workspace-tour .tour-shell:fullscreen { overflow-y: auto; }
+.workspace-tour .tour-shell:fullscreen .tour-stage { flex: 0 0 auto; }
 .workspace-tour .tour-candidates { grid-template-columns: 1fr; }
 .workspace-tour .tour-candidate { padding: 13px 15px; }
 .workspace-tour .tour-candidate h4 { font-size: 15px; margin: 7px 0; }
@@ -812,16 +792,15 @@
 @keyframes tour-halo-breathe { 0%, 100% { opacity: .64; } 50% { opacity: 1; } }
 @keyframes tour-ai-glimmer { 0%, 100% { opacity: .2; transform: scale(.7); } 50% { opacity: .8; transform: scale(1.15); } }
 @media (max-width: 1150px) and (min-width: 761px) {
-  .workspace-tour .tour-stage { height: 1100px; }
-  .workspace-tour .tour-columns { grid-template-columns: minmax(210px, .75fr) minmax(0, 1.8fr); grid-template-rows: minmax(480px, 1fr) 310px; }
+  .workspace-tour .tour-columns { grid-template-columns: minmax(210px, .75fr) minmax(0, 1.8fr); grid-template-rows: 640px auto; }
   .workspace-tour .tour-pbl-panel { grid-column: 1 / -1; }
-  .workspace-tour .tour-pbl-boxes { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
   .workspace-tour .tour-stage { height: auto; }
-  .workspace-tour .tour-columns { grid-template-columns: minmax(0, 1fr); }
+  .workspace-tour .tour-stage:has(.tour-start-overlay),
+  .workspace-tour .tour-stage:has(.tour-summary) { height: 505px; min-height: 505px; }
+  .workspace-tour .tour-columns { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; }
   .workspace-tour .tour-patient-body, .workspace-tour .tour-decision-body { max-height: 680px; overflow: auto; }
-  .workspace-tour .tour-pbl-body { max-height: 540px; }
   .workspace-tour .tour-chapters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .workspace-tour .tour-vindicated-heading { flex-wrap: wrap; }
   .workspace-tour .tour-vindicated-orbit { width: min(100%, 240px); }

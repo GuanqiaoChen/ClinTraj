@@ -1,43 +1,15 @@
 // @vitest-environment jsdom
 
-import { act, type ReactNode } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getWorkflowSnapshot, workflowStages, type WorkflowNode } from "../../lib/pbl/diagnostic-workflow";
+import { getWorkflowSnapshot, workflowStages } from "../../lib/pbl/diagnostic-workflow";
 import { buildWorkflowView, getWorkflowReadingOrder } from "../../lib/pbl/workflow-view";
 import { DiagnosticWorkflow } from "./DiagnosticWorkflow";
 
-const viewport = vi.hoisted(() => ({ fitView: vi.fn(), zoomIn: vi.fn(), zoomOut: vi.fn() }));
+import { viewport } from "@/test/react-flow";
 
-type RenderedNode = { id: string; ariaLabel: string; data: { item: WorkflowNode; muted: boolean } };
-type RenderedEdge = { id: string; source: string; target: string; status: string; sourceHandle: string; targetHandle: string };
-
-// Keep graph geometry outside jsdom while exercising the real controls, fixture,
-// inspector, composer, and the nodes/edges passed across the graph boundary.
-vi.mock("@xyflow/react", () => ({
-  ReactFlowProvider: ({ children }: { children: ReactNode }) => children,
-  ReactFlow: ({ nodes, edges, onNodeClick, children }: {
-    nodes: RenderedNode[];
-    edges: RenderedEdge[];
-    onNodeClick: (event: unknown, node: RenderedNode) => void;
-    children: ReactNode;
-  }) => <div data-testid="flow">
-    {nodes.map(node => <button key={node.id} type="button" data-testid="flow-node" data-node-id={node.id} data-kind={node.data.item.kind} data-status={node.data.item.status} data-muted={node.data.muted} aria-label={node.ariaLabel} onClick={event => onNodeClick(event, node)}>
-      <strong>{node.data.item.title}</strong><span>{node.data.item.summary}</span><span>{node.data.item.statusLabel}</span>
-    </button>)}
-    {edges.map(edge => <span key={edge.id} data-testid="flow-edge" data-source={edge.source} data-target={edge.target} data-status={edge.status} data-source-handle={edge.sourceHandle} data-target-handle={edge.targetHandle} />)}
-    {children}
-  </div>,
-  useReactFlow: () => viewport,
-  useStore: (selector: (state: { width: number; height: number; transform: number[] }) => unknown) => selector({ width: 1200, height: 520, transform: [0, 0, 1] }),
-  ViewportPortal: ({ children }: { children: ReactNode }) => children,
-  Background: () => null,
-  MiniMap: ({ ariaLabel }: { ariaLabel: string }) => <div aria-label={ariaLabel} />,
-  Handle: () => null,
-  BackgroundVariant: { Dots: "dots" },
-  MarkerType: { ArrowClosed: "arrowclosed" },
-  Position: { Top: "top", Bottom: "bottom" },
-}));
+vi.mock("@xyflow/react", () => import("@/test/react-flow"));
 
 vi.mock("motion/react", () => ({ useReducedMotion: () => true }));
 
@@ -116,12 +88,15 @@ describe("diagnostic workflow interactions", () => {
   it("automatically shows the first box each step, with open diagnosis details and row-order navigation", async () => {
     for (const stage of workflowStages) {
       await goTo(stage.index);
-      const order = getWorkflowReadingOrder(buildWorkflowView({ snapshot: getWorkflowSnapshot(stage.index), mode: "focus" }).nodes);
+      const snapshot = getWorkflowSnapshot(stage.index);
+      const order = getWorkflowReadingOrder(buildWorkflowView({ snapshot, mode: "all" }).nodes);
+      const firstId = getWorkflowReadingOrder(buildWorkflowView({ snapshot, mode: "focus" }).nodes)[0].id;
+      const firstIndex = order.findIndex(node => node.id === firstId);
       const selectedId = () => host.querySelector('[aria-label="节点详情"]')?.getAttribute("data-node-id");
-      expect(selectedId()).toBe(order[0].id);
-      expect(button("上一个方框").disabled).toBe(true);
-      expect(host.querySelector('section[aria-label="诊断信息"]')?.textContent).toContain(order[0].details[0]);
-      for (const item of order.slice(1)) {
+      expect(selectedId()).toBe(firstId);
+      expect(button("上一个方框").disabled).toBe(firstIndex === 0);
+      expect(host.querySelector('section[aria-label="诊断信息"]')?.textContent).toContain(order[firstIndex].details[0]);
+      for (const item of order.slice(firstIndex + 1)) {
         await click("下一个方框");
         expect(selectedId()).toBe(item.id);
       }
@@ -133,7 +108,7 @@ describe("diagnostic workflow interactions", () => {
       await selectNode(order.at(-1)!.id);
       expect(selectedId()).toBe(order.at(-1)!.id);
       await click("返回本步首个方框");
-      expect(selectedId()).toBe(order[0].id);
+      expect(selectedId()).toBe(firstId);
     }
   });
 
@@ -163,45 +138,37 @@ describe("diagnostic workflow interactions", () => {
     expect(new Set(shared.map(edge => edge.dataset.targetHandle)).size).toBe(shared.length);
   });
 
-  it("switches between the current diagnostic step and complete history, with hypotheses always available for inspection", async () => {
+  it("keeps the full graph while focusing stages and manually selected paths", async () => {
     const canvas = host.querySelector('[data-testid="diagnostic-canvas"]')!;
     const detailDock = host.querySelector('[data-testid="diagnostic-detail-dock"]')!;
-    expect(detailDock).not.toBeNull();
     expect(canvas.parentElement).toBe(detailDock.parentElement);
-    expect(detailDock.querySelector('[aria-label="节点详情"] h3')?.textContent).toBe("慢性阻塞性肺疾病");
-    expect(detailDock.querySelector('section[aria-label="诊断信息"]')).not.toBeNull();
-    expect(host.textContent).not.toMatch(/进行中|\d+ 个节点|\d+ 条连接/);
-    expect(host.querySelector('[aria-label="推演阶段"]')?.textContent).not.toMatch(/首轮|收敛/);
-    expect(button("当前推演").getAttribute("aria-pressed")).toBe("true");
-    expect(button("全部路径").getAttribute("aria-pressed")).toBe("false");
-    expect(node("presentation")).toBeNull();
-    expect(host.querySelectorAll('[aria-label="诊断假设列表"] button[aria-label^="聚焦假设："]')).toHaveLength(getWorkflowSnapshot(0).nodes.filter(node => node.kind === "hypothesis").length);
-
-    await click("全部路径");
-    expect(button("全部路径").getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelector('[aria-label="画布视图"]')).toBeNull();
+    expect(host.textContent).not.toContain("当前推演");
     expect(node("presentation")).not.toBeNull();
     expect(host.querySelectorAll('[data-testid="flow-node"]')).toHaveLength(getWorkflowSnapshot(0).nodes.length);
+    const initialPosition = node("copd")?.dataset.position;
 
     await goTo(2);
-    const historicalCount = host.querySelectorAll('[data-testid="flow-node"]').length;
-    await click("当前推演");
-    expect(host.querySelectorAll('[data-testid="flow-node"]').length).toBeLessThan(historicalCount);
-    expect(node("obstruction")).not.toBeNull();
-    expect(node("repeat-spirometry")).not.toBeNull();
-    expect(node("bronchiectasis")).not.toBeNull();
-    expect(node("copd")).toBeNull();
-    expect(host.querySelectorAll('[aria-label="诊断假设列表"] button[aria-label^="聚焦假设："]')).toHaveLength(getWorkflowSnapshot(2).nodes.filter(node => node.kind === "hypothesis").length);
+    await advance(0);
+    expect(node("copd")?.dataset.position).toBe(initialPosition);
+    expect(host.querySelectorAll('[data-testid="flow-node"]')).toHaveLength(getWorkflowSnapshot(2).nodes.length);
+    const stageFocus = viewport.fitView.mock.lastCall?.[0].nodes.map((item: { id: string }) => item.id);
+    expect(stageFocus).toContain("repeat-spirometry");
+    expect(stageFocus).not.toContain("presentation");
 
     await click("聚焦假设：慢性阻塞性肺疾病");
+    await advance(0);
     expect(button("聚焦假设：慢性阻塞性肺疾病").getAttribute("aria-pressed")).toBe("true");
-    expect(host.querySelector('[aria-label="节点详情"] h3')?.textContent).toBe("慢性阻塞性肺疾病");
-    expect(detailDock.querySelector('[aria-label="节点详情"]')).not.toBeNull();
+    expect(detailDock.querySelector('[aria-label="节点详情"] h3')?.textContent).toBe("慢性阻塞性肺疾病");
     expect(canvas.querySelector('[aria-label="节点详情"]')).toBeNull();
+    const selectedFocus = viewport.fitView.mock.lastCall?.[0].nodes.map((item: { id: string }) => item.id);
+    expect(selectedFocus).toContain("copd");
+    expect(selectedFocus).toContain("spirometry");
+    expect(selectedFocus).not.toContain("asthma");
+    expect(node("asthma")).not.toBeNull();
     expect(node("repeat-spirometry")?.dataset.muted).toBe("false");
     await click("返回本步首个方框");
-    expect(button("聚焦假设：慢性阻塞性肺疾病").getAttribute("aria-pressed")).toBe("false");
     expect(host.querySelector('[aria-label="节点详情"]')?.getAttribute("data-node-id")).toBe("obstruction");
-    expect(host.querySelector('[data-testid="diagnostic-detail-dock"]')).toBe(detailDock);
     expect(stageIndex()).toBe(2);
   });
 
@@ -215,7 +182,6 @@ describe("diagnostic workflow interactions", () => {
     expect(host.textContent).not.toContain("0.62");
     expect(host.textContent).not.toContain("0.61");
 
-    await click("全部路径");
     await click("下一步");
     expect(stageIndex()).toBe(1);
     expect(node("obstruction")).not.toBeNull();
@@ -335,7 +301,10 @@ describe("diagnostic workflow interactions", () => {
     expect(viewport.zoomOut).toHaveBeenCalledOnce();
     expect(viewport.zoomIn).toHaveBeenCalledOnce();
     expect(viewport.fitView).toHaveBeenCalledWith(expect.objectContaining({ minZoom: 0.12, maxZoom: 1 }));
-    expect(button("全部路径").getAttribute("aria-pressed")).toBe("true");
+    expect(viewport.fitView.mock.lastCall?.[0].nodes).toBeUndefined();
+    expect(button("跟随进展")).toBeTruthy();
+    await click("跟随进展");
+    await advance(0);
     expect(host.querySelector('button[aria-label="跟随进展"]')).toBeNull();
     expect(host.querySelector('[aria-label="工作流全局导航"]')).toBeNull();
     await click("显示缩略图");

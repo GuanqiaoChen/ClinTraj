@@ -22,7 +22,7 @@ interface WorkflowInspectorProps {
   related: WorkflowNode[];
   onClose: () => void;
   onSelect: (id: string) => void;
-  onContinue: () => void;
+  onContinue?: () => void;
   navigation: { index: number; total: number; onPrevious: () => void; onNext: () => void };
 }
 
@@ -126,7 +126,7 @@ export function WorkflowInspector({ node, stageIndex, related, onClose, onSelect
         </details>
       </footer>
 
-      {canContinue && (
+      {canContinue && onContinue && (
         <button type="button" className="dw-button dw-button-primary" onClick={onContinue}>
           <Plus size={14} aria-hidden="true" />从此节点继续<ArrowRight size={14} aria-hidden="true" />
         </button>

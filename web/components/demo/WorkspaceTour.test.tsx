@@ -5,6 +5,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceTour } from "./WorkspaceTour";
 import { TOUR_DURATION_MS, TOUR_TIMING } from "../../lib/demo/workspace-tour";
+import { viewport } from "@/test/react-flow";
+
+vi.mock("@xyflow/react", () => import("@/test/react-flow"));
+vi.mock("motion/react", () => ({ useReducedMotion: () => true }));
+
 import { getWorkflowSnapshot } from "../../lib/pbl/diagnostic-workflow";
 
 let host: HTMLDivElement;
@@ -14,6 +19,7 @@ let rafId: number;
 let callbacks: Map<number, FrameRequestCallback>;
 
 beforeEach(async () => {
+  vi.clearAllMocks();
   now = 0;
   rafId = 0;
   callbacks = new Map();
@@ -78,21 +84,50 @@ describe("workspace tour playback controls", () => {
     expect(host.querySelector('.workspace-tour')?.classList.contains('is-playing')).toBe(true);
     await seek(TOUR_TIMING.evidenceSubmitted);
     const snapshot = getWorkflowSnapshot(1);
-    for (const card of host.querySelectorAll<HTMLElement>('[data-pbl-node-id]')) {
-      const source = snapshot.nodes.find(node => node.id === card.dataset.pblNodeId)!;
+    for (const card of host.querySelectorAll<HTMLElement>('[data-testid="flow-node"]')) {
+      const source = snapshot.nodes.find(node => node.id === card.dataset.nodeId)!;
       expect(card.textContent).toContain(source.title);
       expect(card.textContent).toContain(source.summary);
     }
-    const card = host.querySelector<HTMLButtonElement>('[data-pbl-node-id="reflux-history"]')!;
+    const card = host.querySelector<HTMLButtonElement>('[data-testid="flow-node"][data-node-id="reflux-history"]')!;
     await act(async () => card.click());
-    expect(host.querySelector('[aria-label="PBL 方框详情"]')?.getAttribute('data-selected-node-id')).toBe('reflux-history');
-    await click('下一个 PBL 方框');
-    expect(host.querySelector('[aria-label="PBL 方框详情"]')?.getAttribute('data-selected-node-id')).not.toBe('reflux-history');
+    expect(host.querySelector('[aria-label="节点详情"]')?.getAttribute('data-node-id')).toBe('reflux-history');
+    await click('下一个方框');
+    expect(host.querySelector('[aria-label="节点详情"]')?.getAttribute('data-node-id')).not.toBe('reflux-history');
     await seek(TOUR_TIMING.thirdConfirmed);
-    expect(host.querySelector('[data-pbl-node-id="confirmed-diagnosis"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="flow-node"][data-node-id="confirmed-diagnosis"]')).not.toBeNull();
     await seek(TOUR_TIMING.firstCandidates);
-    expect(host.querySelector('[data-pbl-node-id="confirmed-diagnosis"]')).toBeNull();
+    expect(host.querySelector('[data-testid="flow-node"][data-node-id="confirmed-diagnosis"]')).toBeNull();
     expect(host.textContent).not.toMatch(/PBL-GI-OBS-01|PBL-CT-01|急性加重|无创通气|\?{3}/);
+  });
+
+  it("shares the full PBL module and follows manual decisions, playback, and stage seeks", async () => {
+    await seek(TOUR_TIMING.secondCandidates);
+    const selectedId = () => host.querySelector('[aria-label="节点详情"]')?.getAttribute('data-node-id');
+    const count = host.querySelectorAll('[data-testid="flow-node"]').length;
+    expect(host.querySelector('[aria-label="同步 PBL 诊断路径"] .dw-workflow')).not.toBeNull();
+    expect(count).toBe(getWorkflowSnapshot(2).nodes.length);
+    expect(host.textContent).not.toContain("当前推演");
+    expect(host.querySelector('[aria-label="自动推演"]')).toBeNull();
+    expect(host.querySelector('[aria-label="追加节点"]')).toBeNull();
+    await click("查看诊断路径：反流关联与吞咽风险复核");
+    await advance(0);
+    expect(selectedId()).toBe("reflux-review");
+    expect(viewport.fitView.mock.lastCall?.[0].nodes).toContainEqual({ id: "reflux-review" });
+    expect(host.querySelectorAll('[data-testid="flow-node"]')).toHaveLength(count);
+    expect(host.querySelectorAll('.tour-candidate')).toHaveLength(3);
+    await click("播放演示");
+    await advance(11_000);
+    expect(selectedId()).toBe("bronchiectasis");
+    await advance(0);
+    expect(viewport.fitView.mock.lastCall?.[0].nodes).toEqual(expect.arrayContaining([{ id: "bronchiectasis" }, { id: "chest-ct" }]));
+    await click("下一步");
+    expect(position()).toBe(TOUR_TIMING.secondEvidenceSubmitted);
+    expect(host.querySelector('[data-testid="flow-node"][data-node-id="persistent-obstruction"]')).not.toBeNull();
+    await click("上一步");
+    expect(position()).toBe(TOUR_TIMING.secondGenerationStart);
+    expect(host.querySelector('[data-testid="flow-node"][data-node-id="persistent-obstruction"]')).toBeNull();
+    expect(host.textContent).not.toMatch(/PBL-CT-01|PBL-GI-OBS-01/);
   });
 
   it("starts typing, pauses without drifting, and resumes from the same position", async () => {

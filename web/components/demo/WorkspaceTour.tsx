@@ -1,15 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   Activity, ArrowDown, ArrowLeft, ArrowRight, BookOpen, Check, CheckCheck,
   ChevronRight, CircleDot, ClipboardCheck, FileText, GitBranch, Maximize2,
   Minimize2, MousePointer2, Pause, Play, Plus, RotateCcw, SkipBack, SkipForward,
-  Stethoscope, UserRound, Sparkles, ChevronLeft,
+  Stethoscope, UserRound, Sparkles,
 } from "lucide-react";
 import {
-  getTourFrame, TOUR_CASE, TOUR_CHAPTERS, TOUR_DURATION_MS, TOUR_SOURCES, TOUR_TIMING,
+  getTourFrame, TOUR_CASE, TOUR_CHAPTERS, TOUR_DURATION_MS, TOUR_SOURCES, TOUR_TIMING, TOUR_STAGE_TIMES,
 } from "@/lib/demo/workspace-tour";
+import { DiagnosticWorkflow, type WorkflowPlayback } from "@/components/pbl/DiagnosticWorkflow";
 import "./workspace-tour.css";
 
 type TourFrame = ReturnType<typeof getTourFrame>;
@@ -79,7 +80,8 @@ function useTourPlayer() {
     return () => window.removeEventListener("keydown", onKey);
   }, [toggle, seek, replay]);
 
-  return { timeMs, playing, speed, setSpeed, seek, replay, toggle };
+  const pause = useCallback(() => setPlaying(false), []);
+  return { timeMs, playing, speed, setSpeed, seek, replay, toggle, pause };
 }
 
 function Pointer({ label = "医生操作" }: { label?: string }) {
@@ -181,34 +183,22 @@ function Generation({ frame }: { frame: TourFrame }) {
   </div>;
 }
 
-function PblPanel({ frame }: { frame: TourFrame }) {
-  const [selection, setSelection] = useState<{ context: string; id: string } | null>(null);
-  const boxes = useRef<HTMLDivElement>(null);
-  const context = `${frame.stageIndex}:${frame.focusTarget}:${frame.defaultNodeId}`;
-  const nodes = frame.snapshot.nodes.filter(node => node.introducedAt === frame.stageIndex || frame.snapshot.stage.focusNodeIds.includes(node.id) || node.id === frame.defaultNodeId)
-    .sort((a, b) => a.x - b.x || a.y - b.y);
-  const selectedId = selection?.context === context ? selection.id : frame.defaultNodeId;
-  const selected = nodes.find(node => node.id === selectedId) ?? nodes[0];
-  const index = nodes.findIndex(node => node.id === selected?.id);
-  const select = (id: string) => setSelection({ context, id });
-  const sources = selected ? TOUR_SOURCES.filter(source => selected.sourceIds.includes(source.id)) : [];
-  useEffect(() => {
-    const container = boxes.current;
-    const card = container?.querySelector<HTMLElement>('[aria-pressed="true"]');
-    if (container && card) container.scrollTop += card.getBoundingClientRect().top - container.getBoundingClientRect().top - 4;
-  }, [selected?.id]);
-  return <aside className="tour-pbl-panel" aria-label="同步 PBL 诊断路径">
-    <PanelTitle icon={<GitBranch size={16} />} title="PBL 诊断路径" detail={`${frame.stageIndex + 1} / 6`} />
-    <div className="tour-pbl-body">
-      <div className="tour-pbl-stage"><span>{String(frame.stageIndex + 1).padStart(2, "0")}</span><div><strong>{frame.sessionCreated ? frame.snapshot.stage.title : "从初始诊断信息开始"}</strong><p>{frame.sessionCreated ? frame.snapshot.stage.summary : "输入病例后，假设、检查与证据将沿同一条路径展开。"}</p></div></div>
-      <div ref={boxes} className="tour-pbl-boxes">{nodes.map(node => <button type="button" key={node.id} data-pbl-node-id={node.id} className={`tour-pbl-box is-${node.kind} ${node.id === selected?.id ? "is-selected" : ""}`} aria-pressed={node.id === selected?.id} onClick={() => select(node.id)}><span>{node.statusLabel}</span><strong>{node.title}</strong><p>{node.summary}</p></button>)}</div>
-      {selected && <section className="tour-pbl-detail" aria-label="PBL 方框详情" data-selected-node-id={selected.id}><div className="tour-pbl-detail-nav"><span>方框 {index + 1} / {nodes.length}</span><button type="button" aria-label="上一个 PBL 方框" disabled={index <= 0} onClick={() => select(nodes[index - 1].id)}><ChevronLeft size={15} /></button><button type="button" aria-label="下一个 PBL 方框" disabled={index >= nodes.length - 1} onClick={() => select(nodes[index + 1].id)}><ChevronRight size={15} /></button></div><h4>{selected.title}</h4><p>{selected.rationale}</p><ul>{selected.details.map(detail => <li key={detail}>{detail}</li>)}</ul><div className="tour-pbl-source">{sources.map(source => <a key={source.id} href={source.url} target="_blank" rel="noreferrer"><BookOpen size={11} />{source.title}</a>)}</div><small>{selected.provenance.label}</small></section>}
-      <a className="tour-pbl-open" href="/pbl" target="_blank" rel="noreferrer">打开完整 PBL 路径<ArrowRight size={12} /></a>
-    </div>
-  </aside>;
-}
+type PblPanelProps = Omit<WorkflowPlayback, "snapshot"> & { frame: TourFrame };
 
-function Decisions({ frame }: { frame: TourFrame }) {
+const PblPanel = memo(function PblPanel({ frame, ...playback }: PblPanelProps) {
+  return <section className="tour-pbl-panel" aria-label="同步 PBL 诊断路径">
+    <DiagnosticWorkflow playback={{ ...playback, snapshot: frame.snapshot }} />
+  </section>;
+}, (previous, next) =>
+  previous.focusKey === next.focusKey && previous.focusNodeId === next.focusNodeId &&
+  previous.focusNodeIds?.join("|") === next.focusNodeIds?.join("|") &&
+  previous.frame.stageIndex === next.frame.stageIndex &&
+  previous.frame.snapshot.nodes.length === next.frame.snapshot.nodes.length &&
+  previous.frame.snapshot.vindicatedReview.length === next.frame.snapshot.vindicatedReview.length &&
+  previous.onStageChange === next.onStageChange && previous.onInspect === next.onInspect,
+);
+
+function Decisions({ frame, onFocus }: { frame: TourFrame; onFocus: (nodeIds: string[]) => void }) {
   const [expandedSource, setExpandedSource] = useState(false);
   return <>
     <div className="tour-decision-hint"><span><ClipboardCheck size={15} />{frame.decisionConfirmed ? "医生决定已记录" : "三个候选方案，请医生审核"}</span><small>可选一个或多个，也可自行输入</small></div>
@@ -216,7 +206,7 @@ function Decisions({ frame }: { frame: TourFrame }) {
       const selected = frame.selectedCandidateIds.includes(candidate.id);
       return <article key={candidate.id} className={`tour-candidate ${selected ? "is-selected" : ""} ${frame.activeCandidateId === candidate.id ? "tour-focus" : ""}`}>
         <div className="tour-candidate-top"><span>方案 0{index + 1}</span><span className="tour-checkbox" aria-label={selected ? "已选择" : "未选择"}>{selected && <Check size={14} />}</span></div>
-        <h4>{candidate.title}</h4><p className="tour-candidate-action">{candidate.action}</p><details className="tour-candidate-rationale"><summary>判断依据 · {candidate.nodeIds.length} 个 PBL 方框</summary><p className="tour-candidate-reason">{candidate.rationale}</p></details>
+        <h4><button type="button" className="tour-candidate-focus" aria-label={`查看诊断路径：${candidate.title}`} onClick={() => onFocus(candidate.nodeIds)}>{candidate.title}<GitBranch size={14} /></button></h4><p className="tour-candidate-action">{candidate.action}</p><details className="tour-candidate-rationale"><summary>判断依据 · {candidate.nodeIds.length} 个 PBL 方框</summary><p className="tour-candidate-reason">{candidate.rationale}</p></details>
         <div className="tour-candidate-tags">{candidate.tags.map(tag => <span key={tag}>{tag}</span>)}</div>
         <div className="tour-candidate-source"><BookOpen size={12} /><span>{candidate.sourceIds.length} 条参考来源</span></div>
         {frame.activeCandidateId === candidate.id && <Pointer label="选择方案" />}
@@ -244,7 +234,16 @@ export function WorkspaceTour() {
   const [fullscreenError, setFullscreenError] = useState("");
   const [started, setStarted] = useState(false);
   const begin = () => { setStarted(true); player.replay(); };
-  const seek = (time: number) => { setStarted(true); player.seek(time); };
+  const playerSeek = player.seek;
+  const seek = useCallback((time: number) => { setStarted(true); playerSeek(time); }, [playerSeek]);
+  const seekPblStage = useCallback((index: number) => seek(TOUR_STAGE_TIMES[index]), [seek]);
+  const focusContext = `${frame.stageIndex}:${frame.focusTarget}:${frame.defaultNodeId}`;
+  const [candidateFocus, setCandidateFocus] = useState<{ context: string; nodeIds: string[]; revision: number } | null>(null);
+  const manualFocus = candidateFocus?.context === focusContext ? candidateFocus : null;
+  const focusCandidate = (nodeIds: string[]) => {
+    player.pause();
+    setCandidateFocus(current => ({ context: focusContext, nodeIds, revision: (current?.revision ?? 0) + 1 }));
+  };
   const toggle = () => { setStarted(true); player.toggle(); };
   useEffect(() => {
     const changed = () => setFullscreen(Boolean(document.fullscreenElement));
@@ -296,11 +295,11 @@ export function WorkspaceTour() {
           <div className="tour-columns"><PatientPanel frame={frame} /><div className="tour-decision">
             <PanelTitle icon={<Activity size={16} />} title={frame.sessionCreated ? "下一步临床决策" : "患者信息录入"} detail={frame.sessionCreated ? `第 ${frame.round} 轮` : "建立合成会话"} />
             <div className="tour-decision-body">
-              {!frame.sessionCreated ? <Intake frame={frame} /> : frame.isGenerating ? <Generation frame={frame} /> : frame.candidates.length ? <Decisions key={frame.round} frame={frame} /> : <div className="tour-ready"><Activity size={30} /><h3>患者会话已创建</h3><p>当前信息已纳入患者状态，准备生成下一步建议。</p><span className="tour-action is-active"><Activity size={14} />生成下一步建议<Pointer label="开始生成" /></span></div>}
+              {!frame.sessionCreated ? <Intake frame={frame} /> : frame.isGenerating ? <Generation frame={frame} /> : frame.candidates.length ? <Decisions key={frame.round} frame={frame} onFocus={focusCandidate} /> : <div className="tour-ready"><Activity size={30} /><h3>患者会话已创建</h3><p>当前信息已纳入患者状态，准备生成下一步建议。</p><span className="tour-action is-active"><Activity size={14} />生成下一步建议<Pointer label="开始生成" /></span></div>}
               {frame.enteringEvidence && frame.evidenceSubmitted && <div className="tour-next-round"><span className="tour-action is-active"><Activity size={14} />根据新证据，生成下一步建议<Pointer label="继续下一轮" /></span></div>}
               {frame.sessionCreated && <Timeline frame={frame} />}
             </div>
-          </div><PblPanel key={`${frame.stageIndex}:${frame.round}`} frame={frame} /></div>
+          </div><PblPanel frame={frame} focusNodeId={manualFocus?.nodeIds[0] ?? frame.defaultNodeId} focusNodeIds={manualFocus?.nodeIds ?? frame.candidates.find(candidate => candidate.id === frame.activeCandidateId)?.nodeIds} focusKey={`${focusContext}:${manualFocus?.revision ?? 0}`} onStageChange={seekPblStage} onInspect={player.pause} /></div>
           {initial && <div className="tour-start-overlay"><div className="tour-start-card"><span className="tour-preview-label">医生工作台</span><h2>一位患者 三轮决策<br />一段完整的使用体验</h2><p>患者输入、建议生成、医生选择、新证据录入、下轮决策<br />点击开始，跟随同一个 PBL 合成诊断病例。</p><button type="button" className="tour-start-button" onClick={begin}><Play size={20} fill="currentColor" />开始观看<span>{clock(TOUR_DURATION_MS)}</span></button></div><div className="tour-poster-steps" aria-hidden="true">{["输入患者信息", "生成三条候选", "医生确认选择", "录入新的证据"].map((text, index) => <div key={text}><span>0{index + 1}</span><strong>{text}</strong>{index < 3 && <ArrowDown size={17} />}</div>)}</div></div>}
           {frame.summaryVisible && <div className="tour-summary"><span className="tour-summary-check"><CheckCheck size={30} /></span><p className="tour-summary-eyebrow">一次完整的工作台体验</p><h2>新证据，让下一步更清楚。</h2><p>三轮决策均经医生选择；新增观察沿时间顺序进入会话。<br />三个候选、选择理由与证据共同组成可追溯的轨迹。</p><div className="tour-summary-stats"><span><strong>3</strong>轮决策</span><span><strong>3</strong>候选 / 轮</span><span><strong>2</strong>次新证据录入</span></div><div className="tour-summary-path" aria-label="已完成的六个诊断阶段">{frame.trajectory.map((node, index) => <div key={node.id}>{index > 0 && <ChevronRight size={14} />}<span><Check size={13} />{node.title}</span></div>)}</div><div className="tour-summary-actions"><button type="button" onClick={begin}><RotateCcw size={16} />从头重播</button><button type="button" onClick={() => seek(TOUR_TIMING.thirdNoteStart)}><ArrowLeft size={15} />回看医生选择</button></div><small>病例、生成过程和医生操作均为演示脚本，不表示真实诊疗结果。</small></div>}
         </div>
