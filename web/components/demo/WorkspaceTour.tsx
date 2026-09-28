@@ -140,6 +140,17 @@ function Intake({ frame }: { frame: TourFrame }) {
   </div>;
 }
 
+// Small, smooth variations around the existing 126 px radius; the main ring stays circular.
+function haloWavePath(phase: number) {
+  return Array.from({ length: 96 }, (_, index) => {
+    const angle = index * Math.PI * 2 / 96;
+    const radius = 127 + Math.sin(angle * 6 + phase) * 3 + Math.sin(angle * 9 - phase) * 2 + Math.cos(angle * 3 + phase) * 1.5;
+    return `${index === 0 ? "M" : "L"}${(150 + Math.cos(angle) * radius).toFixed(2)},${(150 + Math.sin(angle) * radius).toFixed(2)}`;
+  }).join(" ") + " Z";
+}
+const HALO_WAVES = [0, 2.1, 4.2].map(haloWavePath);
+const HALO_WAVE_STYLE = Object.fromEntries(HALO_WAVES.map((path, index) => [`--halo-wave-${index}`, `path("${path}")`])) as CSSProperties;
+
 function Generation({ frame, seed }: { frame: TourFrame; seed: number }) {
   const rows = frame.snapshot.vindicatedReview;
   const activeRow = Math.min(rows.length - 1, Math.floor(frame.generationProgress * rows.length));
@@ -152,6 +163,7 @@ function Generation({ frame, seed }: { frame: TourFrame; seed: number }) {
       <span className="tour-candidate-forming-dots" aria-hidden="true">···</span>
     </div>
     <div className="tour-vindicated-orbit" aria-label={`正在复核 ${rows[activeRow]?.label ?? "各系统"}`}>
+      <svg className="tour-orbit-aura" viewBox="0 0 300 300" aria-hidden="true" focusable="false" style={HALO_WAVE_STYLE}><path d={HALO_WAVES[0]} /></svg>
       <div className="tour-orbit-core"><span>VINDICATED</span><strong>{rows[activeRow]?.label ?? "跨系统复核"}</strong><small>{String(Math.max(0, activeRow) + 1).padStart(2, "0")} / {String(rows.length).padStart(2, "0")}</small></div>
     </div>
     {rows[activeRow] && <div className="tour-thinking-detail" key={rows[activeRow].id}><strong>{rows[activeRow].label}</strong><p>{rows[activeRow].assessment}</p><small>{rows[activeRow].nextStep}</small></div>}
