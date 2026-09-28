@@ -74,9 +74,19 @@ describe("workspace tour playback controls", () => {
   it("renders synchronized PBL cards, supports inspection and distinguishes paused AI animation", async () => {
     await seek(TOUR_TIMING.firstGenerationStart + 8000);
     expect(host.querySelector('[aria-label="第 1 轮智能体思考演示"]')).not.toBeNull();
-    expect(host.querySelectorAll('.tour-orbit-letter')).toHaveLength(10);
-    expect(host.querySelector('.tour-orbit-letter.is-scanning')).not.toBeNull();
-    expect(host.querySelector('.tour-generation-activity')?.textContent).toContain('正在思考逐项复核各类病因');
+    expect(host.querySelectorAll('.tour-orbit-letter')).toHaveLength(0);
+    expect(host.querySelectorAll('.tour-orbit-core')).toHaveLength(1);
+    expect(host.querySelectorAll('.tour-generation .tour-shimmer-text')).toHaveLength(1);
+    expect(host.querySelector('.tour-generation-activity .tour-candidate-forming-mark')).not.toBeNull();
+    expect(host.querySelector('.tour-generation-activity .tour-candidate-forming-dots')).not.toBeNull();
+    expect(host.querySelector('.tour-generation-activity')?.textContent).not.toContain('正在思考');
+    expect(host.querySelector('.tour-generation-activity .tour-shimmer-text')?.textContent?.length).toBeGreaterThan(8);
+    expect(host.querySelector('.tour-intro, .tour-synthetic-badge, .tour-generation-meter, .tour-vindicated-heading, .tour-candidate-forming, .tour-ai-glimmers')).toBeNull();
+    expect(host.textContent).not.toContain('播放一份完整的临床诊断');
+    expect(host.querySelector('.tour-decision')?.textContent).not.toContain('基于当前可用证据');
+    const caption = host.querySelector('.tour-generation-activity')?.textContent;
+    await advance(5000);
+    expect(host.querySelector('.tour-generation-activity')?.textContent).toBe(caption);
     expect(host.querySelector('.tour-generation-activity')?.textContent).not.toMatch(/[a-z]/i);
     expect(host.querySelector('.tour-candidate-skeletons')).toBeNull();
     expect(host.querySelector('.workspace-tour')?.classList.contains('is-paused')).toBe(true);
@@ -152,6 +162,8 @@ describe("workspace tour playback controls", () => {
     await seek(TOUR_TIMING.firstAdditionalSelection);
     expect(position()).toBe(TOUR_TIMING.firstAdditionalSelection);
     expect(host.querySelectorAll(".tour-candidate")).toHaveLength(3);
+    expect(host.querySelector(".tour-trajectory")).toBeNull();
+    expect(host.querySelector(".tour-decision")?.textContent).not.toContain("临床决策轨迹");
     expect(host.querySelectorAll(".tour-candidate.is-selected")).toHaveLength(2);
     expect(host.querySelectorAll(".tour-evidence-item")).toHaveLength(1);
     expect(host.textContent).not.toContain("0.62");

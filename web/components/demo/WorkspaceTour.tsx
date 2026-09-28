@@ -5,11 +5,12 @@ import {
   Activity, ArrowDown, ArrowLeft, ArrowRight, BookOpen, Check, CheckCheck,
   ChevronRight, CircleDot, ClipboardCheck, FileText, GitBranch, Maximize2,
   Minimize2, MousePointer2, Pause, Play, Plus, RotateCcw, SkipBack, SkipForward,
-  Stethoscope, UserRound, Sparkles,
+  UserRound, Sparkles,
 } from "lucide-react";
 import {
   getTourFrame, TOUR_CASE, TOUR_CHAPTERS, TOUR_DURATION_MS, TOUR_SOURCES, TOUR_TIMING, TOUR_STAGE_TIMES,
 } from "@/lib/demo/workspace-tour";
+import { getTourThinkingMessage } from "@/lib/demo/thinking-messages";
 import { DiagnosticWorkflow, type WorkflowPlayback } from "@/components/pbl/DiagnosticWorkflow";
 import "./workspace-tour.css";
 
@@ -24,20 +25,24 @@ function useTourPlayer() {
   const [timeMs, setTimeMs] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [thinkingSeed, setThinkingSeed] = useState(0);
   const timeRef = useRef(0);
 
   const seek = useCallback((next: number) => {
     const clamped = Math.min(TOUR_DURATION_MS, Math.max(0, next));
+    if (timeRef.current === 0) setThinkingSeed(Math.floor(Math.random() * 0x100000000));
     timeRef.current = clamped;
     setTimeMs(clamped);
     setPlaying(false);
   }, []);
   const replay = useCallback(() => {
+    setThinkingSeed(Math.floor(Math.random() * 0x100000000));
     timeRef.current = 0;
     setTimeMs(0);
     setPlaying(true);
   }, []);
   const toggle = useCallback(() => {
+    if (timeRef.current === 0 || timeRef.current >= TOUR_DURATION_MS) setThinkingSeed(Math.floor(Math.random() * 0x100000000));
     if (timeRef.current >= TOUR_DURATION_MS) {
       timeRef.current = 0;
       setTimeMs(0);
@@ -81,7 +86,7 @@ function useTourPlayer() {
   }, [toggle, seek, replay]);
 
   const pause = useCallback(() => setPlaying(false), []);
-  return { timeMs, playing, speed, setSpeed, seek, replay, toggle, pause };
+  return { timeMs, playing, speed, thinkingSeed, setSpeed, seek, replay, toggle, pause };
 }
 
 function Pointer({ label = "医生操作" }: { label?: string }) {
@@ -136,50 +141,21 @@ function Intake({ frame }: { frame: TourFrame }) {
   </div>;
 }
 
-/** Renew each bubble's path only while it is invisible between drift cycles. */
-function randomizeBubblePath(bubble: HTMLElement, index: number, count: number) {
-  const heading = index * Math.PI * 2 / count - Math.PI / 2;
-  for (let point = 0; point < 4; point += 1) {
-    const angle = heading + (Math.random() - .5) * .9;
-    const radius = 35.5 + Math.random() * 6;
-    bubble.style.setProperty(`--bubble-x-${point}`, `${(Math.cos(angle) * radius).toFixed(2)}cqw`);
-    bubble.style.setProperty(`--bubble-y-${point}`, `${(Math.sin(angle) * radius).toFixed(2)}cqw`);
-    bubble.style.setProperty(`--bubble-scale-${point}`, String(.72 + Math.random() * .5));
-  }
-}
-
-function Generation({ frame }: { frame: TourFrame }) {
-  const orbit = useRef<HTMLDivElement>(null);
+function Generation({ frame, seed }: { frame: TourFrame; seed: number }) {
   const rows = frame.snapshot.vindicatedReview;
   const activeRow = Math.min(rows.length - 1, Math.floor(frame.generationProgress * rows.length));
-  const currentStep = frame.generationSteps.find(step => step.status === "active") ?? frame.generationSteps[frame.generationSteps.length - 1];
-  useEffect(() => {
-    orbit.current?.querySelectorAll<HTMLElement>(".tour-orbit-letter").forEach((bubble, index) => {
-      randomizeBubblePath(bubble, index, rows.length);
-      const duration = 5 + Math.random() * 3.5;
-      bubble.style.setProperty("--bubble-duration", `${duration}s`);
-      bubble.style.setProperty("--bubble-delay", `${-duration * index / rows.length}s`);
-    });
-  }, [rows.length]);
+  const activity = getTourThinkingMessage(frame.round, frame.generationProgress, seed);
   return <div className="tour-generation tour-ai-surface" aria-label={`第 ${frame.round} 轮智能体思考演示`}>
-    <div className="tour-ai-glimmers" aria-hidden="true"><i /><i /><i /><i /></div>
     <div className="tour-generation-heading"><span className="tour-generation-orbit"><Sparkles size={25} /></span><div><h3>{frame.snapshot.stage.title}</h3><p>{frame.snapshot.stage.summary}</p></div></div>
     <div className="tour-generation-activity" role="status" aria-live="polite">
-      <span className="tour-activity-spark" aria-hidden="true">✳</span>
-      <span className="tour-activity-verb tour-shimmer-text">正在思考</span>
-      <span className="tour-activity-label tour-shimmer-text">{currentStep?.label}</span>
-      <span className="tour-activity-ellipsis" aria-hidden="true">···</span>
+      <span className="tour-candidate-forming-mark" aria-hidden="true">✳</span>
+      <span className="tour-shimmer-text">{activity}</span>
+      <span className="tour-candidate-forming-dots" aria-hidden="true">···</span>
     </div>
-    <div className="tour-generation-meter" aria-hidden="true"><span style={{ width: `${frame.generationProgress * 100}%` }} /></div>
-    <div className="tour-vindicated-heading"><Sparkles size={13} /><strong>VINDICATED · 跨系统复核</strong><span>基于当前可用证据</span></div>
-    <div ref={orbit} className="tour-vindicated-orbit" aria-label={`正在复核 ${rows[activeRow]?.label ?? "各系统"}`}>
-      {rows.map((row, index) => <span key={row.id} style={{ "--orbit-index": index, "--orbit-count": rows.length } as CSSProperties} className={`tour-orbit-letter ${index === activeRow ? "is-scanning" : index < activeRow ? "is-reviewed" : ""}`} title={`${row.letter} · ${row.label}`} onAnimationIteration={event => {
-        if (event.animationName === "tour-bubble-drift") randomizeBubblePath(event.currentTarget, index, rows.length);
-      }}><span>{row.letter}</span></span>)}
-      <div className="tour-orbit-core"><span>正在复核</span><strong>{rows[activeRow]?.label ?? "VINDICATED"}</strong><small>{String(Math.max(0, activeRow) + 1).padStart(2, "0")} / {String(rows.length).padStart(2, "0")}</small></div>
+    <div className="tour-vindicated-orbit" aria-label={`正在复核 ${rows[activeRow]?.label ?? "各系统"}`}>
+      <div className="tour-orbit-core"><span>VINDICATED</span><strong>{rows[activeRow]?.label ?? "跨系统复核"}</strong><small>{String(Math.max(0, activeRow) + 1).padStart(2, "0")} / {String(rows.length).padStart(2, "0")}</small></div>
     </div>
     {rows[activeRow] && <div className="tour-thinking-detail" key={rows[activeRow].id}><strong>{rows[activeRow].label}</strong><p>{rows[activeRow].assessment}</p><small>{rows[activeRow].nextStep}</small></div>}
-    <div className="tour-candidate-forming" aria-hidden="true"><span className="tour-candidate-forming-mark">✳</span><span className="tour-shimmer-text">正在形成三个医生候选</span><span className="tour-candidate-forming-dots">···</span></div>
   </div>;
 }
 
@@ -220,10 +196,6 @@ function Decisions({ frame, onFocus }: { frame: TourFrame; onFocus: (nodeIds: st
     </div>
     <div className="tour-source-disclosure"><button type="button" aria-expanded={expandedSource} onClick={() => setExpandedSource(value => !value)}><BookOpen size={13} />演示参考来源<ChevronRight size={13} /></button>{expandedSource && <div className="tour-source-list">{TOUR_SOURCES.map(source => <a key={source.id} href={source.url} target="_blank" rel="noreferrer">{source.title} ↗</a>)}<p>用于编写合成流程示例，不代表本次进行了在线检索或临床验证。</p></div>}</div>
   </>;
-}
-
-function Timeline({ frame }: { frame: TourFrame }) {
-  return <div className="tour-trajectory"><div className="tour-trajectory-title"><GitBranch size={14} /><h4>临床决策轨迹</h4><span>{frame.trajectory.length} 个节点</span></div><div className="tour-trajectory-nodes">{frame.trajectory.length ? frame.trajectory.map((node, index) => <div className="tour-trajectory-step" key={node.id}>{index > 0 && <ArrowRight size={13} />}<div><span>{String(index + 1).padStart(2, "0")}</span><strong>{node.title}</strong><small>{node.detail}</small></div></div>) : <p>医生确认后，决策节点将在这里逐步形成。</p>}</div></div>;
 }
 
 export function WorkspaceTour() {
@@ -267,8 +239,7 @@ export function WorkspaceTour() {
     if (frame.focusTarget === "case-input") follow(decision, ".tour-input-field");
     else if (frame.focusTarget === "create-session") follow(decision, ".tour-intake-footer");
     else if (frame.focusTarget.startsWith("candidate-")) follow(decision, `.tour-candidate:nth-child(${frame.focusTarget.slice(-1)})`);
-    else if (frame.focusTarget === "review-note" || frame.focusTarget === "confirm") follow(decision, ".tour-review");
-    else if (frame.focusTarget === "trajectory") follow(decision, ".tour-trajectory");
+    else if (frame.focusTarget === "review-note" || frame.focusTarget === "confirm" || frame.focusTarget === "trajectory") follow(decision, ".tour-review");
     else follow(decision);
   }, [frame.focusTarget, frame.phase, frame.summaryVisible, frame.enteringEvidence]);
   useEffect(() => {
@@ -287,17 +258,15 @@ export function WorkspaceTour() {
     <a className="skip-link" href="#tour-player">跳到演示播放器</a>
     <header className="tour-site-header"><a href="/demo" className="tour-brand">ClinTraj<span>临床决策支持</span></a><nav aria-label="演示导航"><a href="/demo/trajectory">轨迹图回放</a><a href="/workspace" className="tour-workspace-link">打开医生工作台<ArrowRight size={14} /></a></nav></header>
     <main className="tour-main">
-      <div className="tour-intro"><div><p className="tour-eyebrow"><span />工作台体验演示</p><h1>播放一份完整的临床诊断</h1><p className="tour-intro-description">从决策建议到证据分析，看医生如何与 ClinTraj 一起推进诊疗</p></div><div className="tour-intro-meta"><span><Stethoscope size={14} />VINDICATED 跨系统诊断</span></div></div>
       <section id="tour-player" className="tour-shell" ref={shell} aria-label="PBL 医生工作台演示播放器">
         <div className={`tour-stage ${frame.isGenerating ? "is-thinking" : ""}`} data-phase={frame.phase} data-pbl-stage={frame.stageIndex}>
           <div className="tour-workspace-header"><div><span className="tour-app-mark"><Activity size={17} /></span><h2>医生工作台</h2><span className="tour-mode-label">演示模式</span></div><div className="tour-workspace-status"><span className={player.playing ? "is-active" : ""} />{frame.statusLabel}</div></div>
-          <div className="tour-session-bar"><div><span>患者会话</span><strong>{TOUR_CASE.title}</strong></div><span className="tour-session-detail">输入 → 决策 → 医生选择 → 新证据</span><span className="tour-synthetic-badge">合成数据</span></div>
+          <div className="tour-session-bar"><div><span>患者会话</span><strong>{TOUR_CASE.title}</strong></div><span className="tour-session-detail">输入 → 决策 → 医生选择 → 新证据</span></div>
           <div className="tour-columns"><PatientPanel frame={frame} /><div className="tour-decision">
             <PanelTitle icon={<Activity size={16} />} title={frame.sessionCreated ? "下一步临床决策" : "患者信息录入"} detail={frame.sessionCreated ? `第 ${frame.round} 轮` : "建立合成会话"} />
             <div className="tour-decision-body">
-              {!frame.sessionCreated ? <Intake frame={frame} /> : frame.isGenerating ? <Generation frame={frame} /> : frame.candidates.length ? <Decisions key={frame.round} frame={frame} onFocus={focusCandidate} /> : <div className="tour-ready"><Activity size={30} /><h3>患者会话已创建</h3><p>当前信息已纳入患者状态，准备生成下一步建议。</p><span className="tour-action is-active"><Activity size={14} />生成下一步建议<Pointer label="开始生成" /></span></div>}
+              {!frame.sessionCreated ? <Intake frame={frame} /> : frame.isGenerating ? <Generation frame={frame} seed={player.thinkingSeed} /> : frame.candidates.length ? <Decisions key={frame.round} frame={frame} onFocus={focusCandidate} /> : <div className="tour-ready"><Activity size={30} /><h3>患者会话已创建</h3><p>当前信息已纳入患者状态，准备生成下一步建议。</p><span className="tour-action is-active"><Activity size={14} />生成下一步建议<Pointer label="开始生成" /></span></div>}
               {frame.enteringEvidence && frame.evidenceSubmitted && <div className="tour-next-round"><span className="tour-action is-active"><Activity size={14} />根据新证据，生成下一步建议<Pointer label="继续下一轮" /></span></div>}
-              {frame.sessionCreated && <Timeline frame={frame} />}
             </div>
           </div><PblPanel frame={frame} focusNodeId={manualFocus?.nodeIds[0] ?? frame.defaultNodeId} focusNodeIds={manualFocus?.nodeIds ?? frame.candidates.find(candidate => candidate.id === frame.activeCandidateId)?.nodeIds} focusKey={`${focusContext}:${manualFocus?.revision ?? 0}`} onStageChange={seekPblStage} onInspect={player.pause} /></div>
           {initial && <div className="tour-start-overlay"><div className="tour-start-card"><span className="tour-preview-label">医生工作台</span><h2>一位患者 三轮决策<br />一段完整的使用体验</h2><p>患者输入、建议生成、医生选择、新证据录入、下轮决策<br />点击开始，跟随同一个 PBL 合成诊断病例。</p><button type="button" className="tour-start-button" onClick={begin}><Play size={20} fill="currentColor" />开始观看<span>{clock(TOUR_DURATION_MS)}</span></button></div><div className="tour-poster-steps" aria-hidden="true">{["输入患者信息", "生成三条候选", "医生确认选择", "录入新的证据"].map((text, index) => <div key={text}><span>0{index + 1}</span><strong>{text}</strong>{index < 3 && <ArrowDown size={17} />}</div>)}</div></div>}

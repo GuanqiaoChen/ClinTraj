@@ -86,7 +86,6 @@ const evidenceTimings = [
   { phase: 'evidence-1', draftStart: 70_000, draftEnd: 84_000, submitted: 86_000, index: 1 },
   { phase: 'evidence-2', draftStart: 136_000, draftEnd: 151_000, submitted: 154_000, index: 2 },
 ] as const;
-const generationLabels = ['整理当前可用证据', '逐项复核各类病因', '比较信息价值与检查负担', '形成三个医生候选'];
 
 function progressBetween(time: number, start: number, end: number) { return Math.min(1, Math.max(0, (time - start) / (end - start))); }
 function typedText(text: string, progress: number) { return Array.from(text).slice(0, Math.floor(Array.from(text).length * progress)).join(''); }
@@ -118,10 +117,6 @@ export function getTourFrame(requestedTimeMs: number) {
   const evidenceInputProgress = evidenceTiming ? progressBetween(timeMs, evidenceTiming.draftStart, evidenceTiming.draftEnd) : 0;
   const evidenceSubmitted = Boolean(evidenceTiming && timeMs >= evidenceTiming.submitted);
   const inputProgress = progressBetween(timeMs, TOUR_TIMING.inputStart, TOUR_TIMING.inputEnd);
-  const generationSteps = generationLabels.map((label, index) => ({
-    id: `generation-${index + 1}`, label,
-    status: generationProgress >= (index + 1) / generationLabels.length ? 'completed' : isGenerating && generationProgress >= index / generationLabels.length ? 'active' : 'waiting',
-  }));
   let focusTarget: TourFocusTarget = 'case-input';
   if (timeMs >= TOUR_TIMING.inputEnd) focusTarget = 'create-session';
   if (isGenerating) focusTarget = 'generate';
@@ -156,7 +151,7 @@ export function getTourFrame(requestedTimeMs: number) {
     evidenceDraft: evidenceTiming && !evidenceSubmitted ? typedText(TOUR_EVIDENCE[evidenceTiming.index].text, evidenceInputProgress) : '',
     evidenceInputProgress, evidenceSubmitted, enteringEvidence: Boolean(evidenceTiming),
     visibleEvidence: TOUR_EVIDENCE.filter(evidence => timeMs >= evidence.availableAtMs),
-    candidates, selectedCandidateIds, generationProgress, generationSteps, isGenerating, decisionConfirmed,
+    candidates, selectedCandidateIds, generationProgress, isGenerating, decisionConfirmed,
     reviewNote: typedText(roundDefinition.reviewNote, progressBetween(timeMs, roundTiming.noteStart, roundTiming.noteEnd)),
     activeCandidateId, defaultNodeId, trajectory, caption, coachTitle: chapter.title, focusTarget,
     completed: timeMs >= TOUR_DURATION_MS, summaryVisible: timeMs >= TOUR_TIMING.summary,
