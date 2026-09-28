@@ -34,6 +34,8 @@ const chapterDefinitions: [TourPhase, string, number][] = [
 export const TOUR_CHAPTERS: readonly TourChapter[] = chapterDefinitions.map(([id, title, startMs], index) => ({ id, title, shortTitle: title, startMs, endMs: chapterDefinitions[index + 1]?.[2] ?? TOUR_DURATION_MS }));
 export const TOUR_CASE = {
   ...workflowCase, id: workflowProvenance.fixtureId, synthetic: true as const,
+  title: workflowCase.title.replace(/：跨系统鉴别$/, ''),
+  patientLabel: workflowCase.patientLabel.replace(/^合成病例\s+\S+\s*·\s*/, ''),
   sessionKind: workflowProvenance.sessionKind, provenance: workflowProvenance,
 };
 export const TOUR_SOURCES = workflowSources;

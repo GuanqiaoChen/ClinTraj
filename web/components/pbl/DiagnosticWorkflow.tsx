@@ -136,11 +136,16 @@ function WorkflowCanvas({ playback }: DiagnosticWorkflowProps) {
   const selectedId = allNodes.some(node => node.id === requestedId) ? requestedId : getDefaultWorkflowNodeId(stepView) ?? getDefaultWorkflowNodeId(view);
   const selected = allNodes.find(node => node.id === selectedId);
   const selectedIndex = readingOrder.findIndex(node => node.id === selectedId);
+  const playbackWindowIds = useMemo(() => {
+    if (!playback || manualSelectionId) return null;
+    const start = Math.max(0, Math.min(selectedIndex, readingOrder.length - 4));
+    return readingOrder.slice(start, start + 4).map(node => node.id);
+  }, [playback, manualSelectionId, selectedIndex, readingOrder]);
   // Automatic details should not dim the other hypotheses before the reader explores them.
   const relatedIds = useMemo(() => {
     const roots = manualSelectionId ? [manualSelectionId] : playback?.focusNodeIds?.length ? playback.focusNodeIds : requestedId ? [requestedId] : [];
-    return roots.length ? new Set(roots.flatMap(id => [...getRelatedPathIds(allEdges, id)])) : null;
-  }, [allEdges, manualSelectionId, playback, requestedId]);
+    return roots.length ? new Set([...roots.flatMap(id => [...getRelatedPathIds(allEdges, id)]), ...(playbackWindowIds ?? [])]) : null;
+  }, [allEdges, manualSelectionId, playback, requestedId, playbackWindowIds]);
   const requestedEdgeId = hoveredEdgeId || focusedEdgeId;
   const activeEdgeId = view.edges.some(edge => edge.id === requestedEdgeId) ? requestedEdgeId : null;
   const activeEdge = view.edges.find(edge => edge.id === activeEdgeId);
@@ -166,13 +171,14 @@ function WorkflowCanvas({ playback }: DiagnosticWorkflowProps) {
     };
   }), [view, relatedIds, activeEdgeId, routes]);
 
-  // Focus changes the camera only. A selected decision includes its next checks/results;
-  // an automatic stage change frames the same nodes as the former local step view.
+  // Demo playback frames four time-visible cards in reading order without changing
+  // the selected detail. Near the end, include preceding cards to fill the window.
+  // Manual inspection continues to frame the selected path and its next checks/results.
   const focusRoots = manualSelectionId ? [manualSelectionId] : playback?.focusNodeIds?.length ? playback.focusNodeIds : requestedId && selectedId ? [selectedId] : [];
   const nextIds = view.edges.filter(edge => focusRoots.includes(edge.source)).map(edge => edge.target);
-  const focusIds = focusRoots.length
+  const focusIds = playbackWindowIds ?? (focusRoots.length
     ? view.nodes.filter(node => focusRoots.includes(node.id) || nextIds.includes(node.id)).map(node => node.id)
-    : stepView.nodes.length ? stepView.nodes.map(node => node.id) : view.nodes.map(node => node.id);
+    : stepView.nodes.length ? stepView.nodes.map(node => node.id) : view.nodes.map(node => node.id));
   const focusSignature = focusIds.join("|");
   const fit = useCallback((overview = false) => void flow.fitView({ nodes: overview ? undefined : focusSignature.split("|").filter(Boolean).map(id => ({ id })), includeHiddenNodes: true, padding: { top: "56px", bottom: "68px", left: "28px", right: "28px" }, minZoom: 0.12, maxZoom: 1, duration }), [flow, duration, focusSignature]);
   useEffect(() => {

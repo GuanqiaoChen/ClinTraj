@@ -276,7 +276,6 @@
 .workspace-tour .tour-workspace-status > span.is-active { background: #9e6b3b; box-shadow: 0 0 0 3px #bc8b5420; }
 .workspace-tour .tour-session-bar > div { display: flex; align-items: center; gap: 10px; }
 .workspace-tour .tour-session-bar strong { color: #35424f; font-weight: 600; }
-.workspace-tour .tour-session-detail { margin-left: auto; color: #707d8a; font-size: 11px; }
 .workspace-tour .tour-synthetic-badge { padding: 1px 7px; border: 1px solid #bfc8d1; border-radius: 4px; color: #576879; font-size: 10px; white-space: nowrap; }
 .workspace-tour .tour-patient,
 .workspace-tour .tour-decision { display: flex; flex-direction: column; overflow: hidden; border: 1px solid #b9c2cc; border-radius: 8px; background: #fff; box-shadow: 0 2px 5px #17273806; }
@@ -309,13 +308,12 @@
 .workspace-tour .tour-evidence-empty { display: flex; align-items: center; flex-direction: column; justify-content: center; gap: 7px; min-height: 132px; border: 1px dashed #cad2dc; border-radius: 7px; color: #738392; background: #fafbfc; }
 .workspace-tour .tour-evidence-empty p { font-size: 12px; color: #5b6b7a; }
 .workspace-tour .tour-evidence-empty > span { font-size: 11px; }
-.workspace-tour .tour-synthetic-note,
 .workspace-tour .tour-next-evidence { display: flex; align-items: center; gap: 6px; margin-top: 14px; color: #778493; font-size: 10px; }
 .workspace-tour .tour-next-evidence { padding: 10px; border: 1px solid #d8dfe6; border-radius: 5px; color: #5b6d7d; font-size: 11px; background: #f7f9fa; }
 .workspace-tour .tour-evidence-entry { position: relative; margin: 14px 0 4px; padding: 12px; border: 1px solid #bd936b; border-radius: 6px; background: #fffdf9; }
 .workspace-tour .tour-evidence-entry > label { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; }
 .workspace-tour .tour-evidence-entry textarea { min-height: 160px; font-size: 12px; }
-.workspace-tour .tour-evidence-entry-footer { display: flex; align-items: center; justify-content: space-between; gap: 9px; margin-top: 10px; font-size: 10px; color: #6c7986; }
+.workspace-tour .tour-evidence-entry-footer { display: flex; align-items: center; justify-content: flex-end; gap: 9px; margin-top: 10px; font-size: 10px; color: #6c7986; }
 .workspace-tour .tour-intake-form { padding: 2px 2px 4px; }
 .workspace-tour .tour-intake-heading { display: flex; align-items: center; gap: 11px; margin-bottom: 18px; }
 .workspace-tour .tour-step-marker { display: grid; place-items: center; width: 34px; height: 34px; background: #edf0f3; color: #536579; border: 1px solid #d2dae2; border-radius: 7px; font-size: 12px; font-weight: 600; }
@@ -474,7 +472,6 @@
   .workspace-tour .tour-candidate h4 { font-size: 14px; }
   .workspace-tour .tour-chapters button small { display: none; }
   .workspace-tour .tour-chapters button { justify-content: center; padding: 9px 6px; }
-  .workspace-tour .tour-session-detail { display: none; }
   .workspace-tour .tour-synthetic-badge { margin-left: auto; }
   .workspace-tour .tour-start-overlay { gap: 25px; padding: 32px 46px; }
   .workspace-tour .tour-decision-hint small { display: none; }
@@ -545,7 +542,6 @@
   .workspace-tour .tour-evidence-list { max-height: 240px; overflow: auto; scrollbar-width: thin; }
   .workspace-tour .tour-evidence-item p { font-size: 12px; }
   .workspace-tour .tour-evidence-entry textarea { min-height: 200px; }
-  .workspace-tour .tour-synthetic-note { margin-top: 11px; }
   .workspace-tour .tour-intake-heading { margin-bottom: 16px; gap: 8px; }
   .workspace-tour .tour-intake-heading h3 { font-size: 15px; }
   .workspace-tour .tour-intake-heading p { font-size: 11px; }
@@ -656,7 +652,7 @@
   padding: 18px 20px 20px;
   border: 0;
   border-radius: 0;
-  background: linear-gradient(135deg, #f9fcfc, #f5f9fa);
+  background: transparent;
 }
 .workspace-tour .tour-ai-surface > * { position: relative; z-index: 1; }
 .workspace-tour .tour-generation-orbit { position: relative; border-radius: 50%; color: var(--ai-blue); border-color: #84bfbd; background: #e8f5f4; }

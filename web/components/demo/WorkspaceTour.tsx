@@ -114,12 +114,11 @@ function PatientPanel({ frame }: { frame: TourFrame }) {
       {enteringEvidence && !frame.evidenceSubmitted && <div className="tour-evidence-entry tour-focus">
         <label htmlFor="tour-evidence">新增观察信息</label>
         <textarea id="tour-evidence" readOnly tabIndex={-1} rows={5} value={frame.evidenceDraft} placeholder="录入新获得的检查结果与补充病史……" />
-        <div className="tour-evidence-entry-footer"><span>解锁时间 · 立即</span><span className={`tour-action ${frame.evidenceInputProgress >= 1 ? "is-active" : ""}`}><Plus size={13} />添加证据</span></div>
+        <div className="tour-evidence-entry-footer"><span className={`tour-action ${frame.evidenceInputProgress >= 1 ? "is-active" : ""}`}><Plus size={13} />添加证据</span></div>
         <Pointer label={frame.evidenceInputProgress < 1 ? "录入新证据" : "提交证据"} />
       </div>}
       {enteringEvidence && frame.evidenceSubmitted && <div className="tour-receipt"><Check size={14} /><span>新证据已录入 · 当前可用证据 {frame.visibleEvidence.length} 组</span></div>}
       {!enteringEvidence && frame.sessionCreated && <div className="tour-next-evidence"><Plus size={14} /><span>{frame.round === 1 ? "等待本轮决策后的新观察" : "新证据已纳入本轮评估"}</span></div>}
-      <div className="tour-synthetic-note"><CircleDot size={12} />独立合成会话 · 不写入真实工作台</div>
     </div>
   </aside>;
 }
@@ -261,7 +260,7 @@ export function WorkspaceTour() {
       <section id="tour-player" className="tour-shell" ref={shell} aria-label="PBL 医生工作台演示播放器">
         <div className={`tour-stage ${frame.isGenerating ? "is-thinking" : ""}`} data-phase={frame.phase} data-pbl-stage={frame.stageIndex}>
           <div className="tour-workspace-header"><div><span className="tour-app-mark"><Activity size={17} /></span><h2>医生工作台</h2><span className="tour-mode-label">演示模式</span></div><div className="tour-workspace-status"><span className={player.playing ? "is-active" : ""} />{frame.statusLabel}</div></div>
-          <div className="tour-session-bar"><div><span>患者会话</span><strong>{TOUR_CASE.title}</strong></div><span className="tour-session-detail">输入 → 决策 → 医生选择 → 新证据</span></div>
+          <div className="tour-session-bar"><div><span>患者会话</span><strong>{TOUR_CASE.title}</strong></div></div>
           <div className="tour-columns"><PatientPanel frame={frame} /><div className="tour-decision">
             <PanelTitle icon={<Activity size={16} />} title={frame.sessionCreated ? "下一步临床决策" : "患者信息录入"} detail={frame.sessionCreated ? `第 ${frame.round} 轮` : "建立合成会话"} />
             <div className="tour-decision-body">

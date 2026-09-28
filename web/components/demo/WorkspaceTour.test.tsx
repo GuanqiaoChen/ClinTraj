@@ -140,6 +140,32 @@ describe("workspace tour playback controls", () => {
     expect(host.textContent).not.toMatch(/PBL-CT-01|PBL-GI-OBS-01/);
   });
 
+  it("frames four available boxes by default while keeping the first decision's details open", async () => {
+    for (const [time, selectedId] of [
+      [TOUR_TIMING.firstGenerationStart + 4000, "presentation"],
+      [TOUR_TIMING.evidenceSubmitted, "obstruction"],
+      [TOUR_TIMING.secondGenerationStart, "repeat-spirometry"],
+      [TOUR_TIMING.secondEvidenceSubmitted, "persistent-obstruction"],
+      [TOUR_TIMING.thirdGenerationStart, "respiratory-review"],
+      [TOUR_TIMING.thirdConfirmed, "confirmed-diagnosis"],
+    ] as const) {
+      await seek(time);
+      await advance(0);
+      expect(host.querySelector('[aria-label="节点详情"]')?.getAttribute("data-node-id")).toBe(selectedId);
+      const framed = viewport.fitView.mock.lastCall?.[0].nodes as { id: string }[];
+      expect(framed).toHaveLength(4);
+      expect(framed).toContainEqual({ id: selectedId });
+      for (const { id } of framed) expect(host.querySelector(`[data-testid="flow-node"][data-node-id="${id}"]`)?.getAttribute("data-muted")).toBe("false");
+      if (time === TOUR_TIMING.secondGenerationStart) {
+        expect(framed.map(node => node.id)).toEqual(["repeat-spirometry", "peak-flow", "bronchiectasis", "reflux-review"]);
+      }
+    }
+    await seek(TOUR_TIMING.firstGenerationStart);
+    await advance(0);
+    expect(viewport.fitView.mock.lastCall?.[0].nodes).toEqual([{ id: "presentation" }]);
+    expect(host.textContent).not.toMatch(/PBL-CT-01|PBL-GI-OBS-01/);
+  });
+
   it("starts typing, pauses without drifting, and resumes from the same position", async () => {
     expect(host.textContent).toContain("开始观看");
     await click("开始观看");
