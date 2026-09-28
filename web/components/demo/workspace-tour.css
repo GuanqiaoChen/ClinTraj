@@ -746,9 +746,7 @@
 .workspace-tour .tour-ai-glimmers i:nth-child(4) { left: 8%; top: 92%; animation-delay: -2.6s; }
 .workspace-tour .tour-vindicated-heading { display: flex; align-items: center; gap: 6px; margin: 15px 0 0; font-size: 10px; color: var(--ai-ink); }
 .workspace-tour .tour-vindicated-heading > span { margin-left: auto; color: #819ba6; font-size: 9px; }
-.workspace-tour .tour-vindicated-orbit { position: relative; display: grid; place-items: center; width: min(100%, 274px); aspect-ratio: 1; margin: 4px auto 0; }
-.workspace-tour .tour-orbit-track { position: absolute; inset: 13%; border: 1px solid #89bcc786; border-radius: 50%; }
-.workspace-tour .tour-orbit-track::before { content: ""; position: absolute; inset: -2px; border-radius: 50%; background: conic-gradient(from 0deg, #3d9f91, #568fb5 32%, #8a74ad 67%, #3d9f91 88%, #f7fcfc 94%, #3d9f91); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px)); mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px)); animation: tour-orbit-spin 5s linear infinite, tour-halo-breathe 2.6s ease-in-out infinite; filter: drop-shadow(0 0 4px #568fb5a0); }
+.workspace-tour .tour-vindicated-orbit { position: relative; display: grid; place-items: center; container-type: inline-size; width: min(100%, 274px); aspect-ratio: 1; margin: 4px auto 0; }
 .workspace-tour .tour-orbit-letter {
   --bubble-mint: #c7e8e0;
   --bubble-blue: #d1e3f2;
@@ -758,8 +756,8 @@
   place-items: center;
   isolation: isolate;
   overflow: hidden;
-  width: 32px;
-  height: 32px;
+  width: min(32px, 12cqw);
+  height: min(32px, 12cqw);
   border: 1px solid #a6c9d0;
   border-radius: 50%;
   background: linear-gradient(125deg, var(--bubble-mint), var(--bubble-blue) 35%, var(--bubble-lilac) 65%, var(--bubble-mint));
@@ -768,9 +766,10 @@
   font-size: 12px;
   font-weight: 700;
   box-shadow: inset 0 1px 2px #ffffffc9, inset 0 -2px 4px #688fa31a, 0 2px 5px #6aafb233;
-  transform: rotate(calc((var(--orbit-index) * 360deg / var(--orbit-count)) - 90deg)) translateX(min(38vw, 116px)) rotate(calc(90deg - (var(--orbit-index) * 360deg / var(--orbit-count))));
-  animation: tour-bubble-gradient 6s ease-in-out infinite, tour-bubble-float 4.8s ease-in-out infinite;
-  animation-delay: calc(var(--orbit-index) * -.63s), calc(var(--orbit-index) * -.41s);
+  transform: rotate(calc((var(--orbit-index) * 360deg / var(--orbit-count)) - 90deg)) translateX(39cqw) rotate(calc(90deg - (var(--orbit-index) * 360deg / var(--orbit-count))));
+  animation: tour-bubble-gradient 6s ease-in-out infinite, tour-bubble-drift var(--bubble-duration, 6s) ease-in-out infinite;
+  animation-delay: calc(var(--orbit-index) * -.63s), var(--bubble-delay, 0s);
+  will-change: transform, opacity;
   transition: color .3s, border-color .3s, box-shadow .3s;
 }
 .workspace-tour .tour-orbit-letter::before { content: ""; position: absolute; inset: 1px; z-index: -1; border-radius: inherit; pointer-events: none; background: radial-gradient(ellipse at 28% 18%, #ffffffc7, #ffffff2b 34%, transparent 62%); }
@@ -798,11 +797,16 @@
 .workspace-tour .tour-chapters { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 .workspace-tour.is-paused *, .workspace-tour.is-paused *::before, .workspace-tour.is-paused *::after { animation-play-state: paused !important; }
 @keyframes tour-ai-sweep { from { background-position: 100% 50%; } to { background-position: -100% 50%; } }
-@keyframes tour-orbit-spin { to { transform: rotate(360deg); } }
 @keyframes tour-text-shimmer { 0% { background-position: 100% 50%; text-shadow: 0 0 0 #90b8c200; } 50% { text-shadow: 0 0 5px #90b8c24d; } 100% { background-position: -100% 50%; text-shadow: 0 0 0 #90b8c200; } }
 @keyframes tour-bubble-gradient { 0%, 100% { background-position: 0% 25%; } 50% { background-position: 100% 75%; } }
-/* Individual translate/scale leave the radial positioning transform intact. */
-@keyframes tour-bubble-float { 0%, 100% { translate: 0 1px; scale: .98; } 50% { translate: 0 -2px; scale: 1.04; } }
+/* Each bubble has its own duration and fresh waypoints; hidden endpoints avoid jumps. */
+@keyframes tour-bubble-drift {
+  0% { opacity: 0; transform: translate(var(--bubble-x-0), var(--bubble-y-0)) scale(.25); }
+  18% { opacity: .9; transform: translate(var(--bubble-x-1), var(--bubble-y-1)) scale(var(--bubble-scale-1)); }
+  43% { opacity: 1; transform: translate(var(--bubble-x-2), var(--bubble-y-2)) scale(var(--bubble-scale-2)); }
+  68% { opacity: .85; transform: translate(var(--bubble-x-3), var(--bubble-y-3)) scale(var(--bubble-scale-3)); }
+  86%, 100% { opacity: 0; transform: translate(var(--bubble-x-3), var(--bubble-y-3)) scale(.2); }
+}
 @keyframes tour-detail-enter { from { opacity: .4; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes tour-halo-spin { to { transform: rotate(360deg); } }
 @keyframes tour-halo-breathe { 0%, 100% { opacity: .64; } 50% { opacity: 1; } }
@@ -821,7 +825,6 @@
   .workspace-tour .tour-chapters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .workspace-tour .tour-vindicated-heading { flex-wrap: wrap; }
   .workspace-tour .tour-vindicated-orbit { width: min(100%, 240px); }
-  .workspace-tour .tour-orbit-letter { transform: rotate(calc((var(--orbit-index) * 360deg / var(--orbit-count)) - 90deg)) translateX(min(34vw, 101px)) rotate(calc(90deg - (var(--orbit-index) * 360deg / var(--orbit-count)))); }
 }
 @media (prefers-reduced-motion: reduce) {
   .workspace-tour *,

@@ -134,10 +134,31 @@ function Intake({ frame }: { frame: TourFrame }) {
   </div>;
 }
 
+/** Renew each bubble's path only while it is invisible between drift cycles. */
+function randomizeBubblePath(bubble: HTMLElement, index: number, count: number) {
+  const heading = index * Math.PI * 2 / count - Math.PI / 2;
+  for (let point = 0; point < 4; point += 1) {
+    const angle = heading + (Math.random() - .5) * .9;
+    const radius = 35.5 + Math.random() * 6;
+    bubble.style.setProperty(`--bubble-x-${point}`, `${(Math.cos(angle) * radius).toFixed(2)}cqw`);
+    bubble.style.setProperty(`--bubble-y-${point}`, `${(Math.sin(angle) * radius).toFixed(2)}cqw`);
+    bubble.style.setProperty(`--bubble-scale-${point}`, String(.72 + Math.random() * .5));
+  }
+}
+
 function Generation({ frame }: { frame: TourFrame }) {
+  const orbit = useRef<HTMLDivElement>(null);
   const rows = frame.snapshot.vindicatedReview;
   const activeRow = Math.min(rows.length - 1, Math.floor(frame.generationProgress * rows.length));
   const currentStep = frame.generationSteps.find(step => step.status === "active") ?? frame.generationSteps[frame.generationSteps.length - 1];
+  useEffect(() => {
+    orbit.current?.querySelectorAll<HTMLElement>(".tour-orbit-letter").forEach((bubble, index) => {
+      randomizeBubblePath(bubble, index, rows.length);
+      const duration = 5 + Math.random() * 3.5;
+      bubble.style.setProperty("--bubble-duration", `${duration}s`);
+      bubble.style.setProperty("--bubble-delay", `${-duration * index / rows.length}s`);
+    });
+  }, [rows.length]);
   return <div className="tour-generation tour-ai-surface" aria-label={`第 ${frame.round} 轮智能体思考演示`}>
     <div className="tour-ai-glimmers" aria-hidden="true"><i /><i /><i /><i /></div>
     <div className="tour-generation-heading"><span className="tour-generation-orbit"><Sparkles size={25} /></span><div><h3>{frame.snapshot.stage.title}</h3><p>{frame.snapshot.stage.summary}</p></div></div>
@@ -149,9 +170,10 @@ function Generation({ frame }: { frame: TourFrame }) {
     </div>
     <div className="tour-generation-meter" aria-hidden="true"><span style={{ width: `${frame.generationProgress * 100}%` }} /></div>
     <div className="tour-vindicated-heading"><Sparkles size={13} /><strong>VINDICATED · 跨系统复核</strong><span>基于当前可用证据</span></div>
-    <div className="tour-vindicated-orbit" aria-label={`正在复核 ${rows[activeRow]?.label ?? "各系统"}`}>
-      <div className="tour-orbit-track" aria-hidden="true" />
-      {rows.map((row, index) => <span key={row.id} style={{ "--orbit-index": index, "--orbit-count": rows.length } as CSSProperties} className={`tour-orbit-letter ${index === activeRow ? "is-scanning" : index < activeRow ? "is-reviewed" : ""}`} title={`${row.letter} · ${row.label}`}><span>{row.letter}</span></span>)}
+    <div ref={orbit} className="tour-vindicated-orbit" aria-label={`正在复核 ${rows[activeRow]?.label ?? "各系统"}`}>
+      {rows.map((row, index) => <span key={row.id} style={{ "--orbit-index": index, "--orbit-count": rows.length } as CSSProperties} className={`tour-orbit-letter ${index === activeRow ? "is-scanning" : index < activeRow ? "is-reviewed" : ""}`} title={`${row.letter} · ${row.label}`} onAnimationIteration={event => {
+        if (event.animationName === "tour-bubble-drift") randomizeBubblePath(event.currentTarget, index, rows.length);
+      }}><span>{row.letter}</span></span>)}
       <div className="tour-orbit-core"><span>正在复核</span><strong>{rows[activeRow]?.label ?? "VINDICATED"}</strong><small>{String(Math.max(0, activeRow) + 1).padStart(2, "0")} / {String(rows.length).padStart(2, "0")}</small></div>
     </div>
     {rows[activeRow] && <div className="tour-thinking-detail" key={rows[activeRow].id}><strong>{rows[activeRow].label}</strong><p>{rows[activeRow].assessment}</p><small>{rows[activeRow].nextStep}</small></div>}
